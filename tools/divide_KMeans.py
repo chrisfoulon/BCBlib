@@ -2,6 +2,7 @@
 
 import os
 import math
+
 import numpy as np
 
 import nibabel as nib
@@ -86,21 +87,26 @@ def roization(seed_path, target_path, ROIs_size, res_folder):
     # We binarise
     seed_bin = nifti_bin(seed_img)
     target_bin = nifti_bin(target_img)
-    t_m_s = math_img("img1 - img2", img1 = target_bin,
-                               img2 = seed_bin)
 
     roized_seed = divide(seed_bin, ROIs_size,
-                         os.path.join(bn_seed, res_path))
-    roiz_tar_path = os.path.join(bn_target, res_path)
-    roized_t_m_s = divide(t_m_s, ROIs_size, roiz_tar_path)
+                         os.path.join(res_folder, bn_seed))
+    t_m_s = math_img("img1 - img2", img1 = target_bin,
+                     img2 = seed_bin)
 
-    # We create the roization of the target
-    roized_target = math_img("img1 + img2", img1 = roized_t_m_s,
-                               img2 = roized_seed)
+    roiz_tar_path = os.path.join(res_folder, bn_target)
+
+    values = np.unique(t_m_s)
+    if len(values) == 1:
+        print("The target mask is equal to the seed mask.")
+        roized_target = roized_seed
+    else:
+        roized_t_m_s = divide(t_m_s, ROIs_size, roiz_tar_path)
+
+        # We create the roization of the target
+        roized_target = math_img("img1 + img2", img1 = roized_t_m_s,
+                                   img2 = roized_seed)
     nib.save(roized_target, roiz_tar_path)
 
     return roized_seed, roized_target
 
 roization(seed, target, 128, '/data/BCBlab/Data/')
-
-""" WHAT DO WE DO IF TARGET == SEED ?!?!?!?!?!?!"""
