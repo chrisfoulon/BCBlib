@@ -60,20 +60,6 @@ def nifti_bin(nii):
     data[data != 0] = 1
     return nib.Nifti1Image(data, nii.affine)
 
-target = '/data/experiments_BCBlab/test_COBRA/S1/Tracto_4D/s01M_LH_targetMask.nii.gz'
-seed = '/data/experiments_BCBlab/test_COBRA/S1/Tracto_4D/s01M_LH_seedROIs.nii.gz'
-res_path = '/data/BCBlab/Data/test_divide.nii.gz'
-bin_path = '/data/BCBlab/Data/test_bin.nii.gz'
-bin_seed = '/data/BCBlab/Data/target_bin.nii.gz'
-bin_tar = '/data/BCBlab/Data/seed_bin.nii.gz'
-# labels = divide(target, 128, res_path)
-"""IT WILL BE BETTER TO USE ONLY NIIFTI1IMAGES !!! Instead of save nifti files
-"""
-binarise(seed, bin_seed)
-binarise(target, bin_tar)
-tar_sub = math_img("img1 - img2", img1 = bin_tar, img2 = bin_seed)
-tar_sub
-
 def roization(seed_path, target_path, ROIs_size, res_folder):
     """ We binarise the seed and the target, then we will ROIze the seed and
     the target-minus-seed images. The result will be a ROIzed seed image and
@@ -109,4 +95,7 @@ def roization(seed_path, target_path, ROIs_size, res_folder):
 
     return roized_seed, roized_target
 
-roization(seed, target, 128, '/data/BCBlab/Data/')
+
+# target = '/data/experiments_BCBlab/test_COBRA/S1/Tracto_4D/s01M_LH_targetMask.nii.gz'
+# seed = '/data/experiments_BCBlab/test_COBRA/S1/Tracto_4D/s01M_LH_seedROIs.nii.gz'
+# roization(seed, target, 128, '/data/BCBlab/Data/')
