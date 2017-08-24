@@ -32,8 +32,8 @@ def divide(img, ROIs_size, nb_run=10):
     print(' ')
     print('I need to create the seed ROIs.')
     print('This might take some time for large seed regions...')
-
-    km = KMeans(n_clusters=k, n_init=nb_run, n_jobs=-2)
+    # , n_jobs=-2 (to use every proc)
+    km = KMeans(n_clusters=k, n_init=nb_run)
     ROIlabels = km.fit_predict(coords)
 
     mask = np.zeros(data.shape)
@@ -168,25 +168,39 @@ ROIs_size = 3
 """
 
 
-def seperate_ROIs(nii):
+def seperate_ROIs(nii, res_folder, name):
     # if not os.path.exists(res_folder):
     #     os.mkdir(res_folder)
     # nii = nib.load(img)
     # affine = nii.affine
     data = nii.get_data()
+    affine = nii.affine
     o_max = np.amax(data)
 
-    tt = []
+    # tt = []
+    folder = os.path.join(res_folder, name)
+    os.mkdir(folder)
     for i in np.arange(1, o_max + 1):
-        clu = np.array(np.where(data == i)).T
-        tt.append(len(clu))
+        clu = np.array(np.where(data == i))
+        mask = np.zeros(data.shape)
+        mask[clu[ind,0],
+             clu[ind,1], clu[ind,2]] = i
+        # tt.append(len(clu))
+        img_ROIs = nib.Nifti1Image(mask, affine)
+        path = os.path.join(folder, "clu" + str(i) + "_" + base)
+        nib.save(mask, path)
+
+
     # print(np.unique(tt))
-    print("Length: " + str(len(tt)))
-    return tt
+    # print("Length: " + str(len(tt)))
+    # return tt
 
 def testing():
     nii = nib.load("/data/experiments_BCBlab/555555_LH/Tracto_mat/30.625_seedROIs.nii.gz")
+    os.path.basename(nii.get_filename())
     wd = "/data/BCBlab/Data/Parcellotron3000/res_divide/"
+    aa = np.array(np.where(nii.get_data())).T
+    type(aa[0])
     folders = [d for d in os.listdir(wd) if os.path.isdir(os.path.join(wd, d))]
     seperate_ROIs(nii, "/data/BCBlab/Data/Parcellotron3000/res_divide/tt")
     folders = sorted(folders)
@@ -213,16 +227,30 @@ def testing():
         print(len(arr))
 
 
-# import sys
-#
-# res = sys.argv[3]
-# seed = os.path.join(res, sys.argv[1])
-# target = os.path.join(res, sys.argv[2])
-# roization(seed, target, 5, res)
+import sys
 
-def test_KMeans():
+res = sys.argv[3]
+seed = nib.load(os.path.join(res, sys.argv[1]))
+target = nib.load(os.path.join(res, sys.argv[2]))
+
+filename = seed.get_filename()
+base = os.path.basename(filename)
+ind = base.index('.')
+seed_name = base[:ind]
+filename = target.get_filename()
+base = os.path.basename(filename)
+ind = base.index('.')
+target_name = base[:ind]
+
+roized_seed = divide(seed, 3)
+roized_target = divide(target, 3)
+# roization(seed, target, 5, res)
+seperate_ROIs(roized_seed, res, seed_name)
+seperate_ROIs(roized_target, res, target_name)
+
+def test_KMeans(img_name):
     wd = "/data/BCBlab/Data/Parcellotron3000/res_divide/"
-    nii = nib.load(os.path.join(wd, "tt/FrontalL_seed.nii.gz"))
+    nii = nib.load(os.path.join(wd, "tt/" + img_name))
     for i in [5, 10, 15, 20, 50, 100]:
         roized = divide(nii, 5, i)
         print("##########TRIAL WITH " + str(i), " REPETITIONS ############")
@@ -233,4 +261,49 @@ def test_KMeans():
             print("[" + str(i) + "]" + str(len(arr)))
         print("################""TRIAL'S END##############")
 
-test_KMeans()
+    test_KMeans("FrontalL_seed.nii.gz")
+    print("WHIIIIIIIIIIIITE RIBBBBBBBBBBBOOOOOOOONNNN !!!!!")
+    print("WHIIIIIIIIIIIITE RIBBBBBBBBBBBOOOOOOOONNNN !!!!!")
+    print("WHIIIIIIIIIIIITE RIBBBBBBBBBBBOOOOOOOONNNN !!!!!")
+    test_KMeans("ROIs_WhiteRibbon_masked.nii.gz")
+
+    from scipy.spatial import distance_matrix
+    m1 = [[4,4,1],[3,5,1]]
+    m1[0:2]
+    m2 = [[3,7,1],[3,5,1]]
+    distance_matrix(m1,m2)
+    import math
+    math.sqrt(10)
+    math.sqrt(2)
+
+
+
+
+def find_seed(coords, dir):
+    pass
+
+def gather_round(seed, coords, size):
+    """ Find the nearest voxels from the seed and return an array of their
+    coordinates
+    Parameters
+    ----------
+    seed: np.array
+        array([x,y,z]) an array of the coordinates of the seed voxel
+        of the cluster
+    coords: np.array (coordinates of each voxel on lines)
+        coordinates of voxels in the mask
+    size: int
+        size of the cluster. If there isn't enough coordinates, the function
+        will still return a cluster but with less voxels
+    Returns
+    -------
+    np.array
+        array with the coordinates of the voxels in the cluster of neighbors.
+        So it will contain seed
+    """
+    dist_mat = distance_matrix(np.array(seed), coords)
+    dist_mat = sorted(dist_mat)
+    return dist_mat[0:size]
+
+def divide_compactor(img, size):
+    pass
