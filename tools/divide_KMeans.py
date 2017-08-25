@@ -179,7 +179,9 @@ def seperate_ROIs(nii, res_folder, name):
 
     # tt = []
     folder = os.path.join(res_folder, name)
-    os.mkdir(folder)
+    if not os.path.exists(folder):
+        os.mkdir(folder)
+    
     for i in np.arange(1, o_max + 1):
         clu = np.array(np.where(data == i))
         mask = np.zeros(data.shape)
