@@ -181,7 +181,7 @@ def seperate_ROIs(nii, res_folder, name):
     folder = os.path.join(res_folder, name)
     if not os.path.exists(folder):
         os.mkdir(folder)
-    
+
     for i in np.arange(1, o_max + 1):
         clu = np.array(np.where(data == i))
         mask = np.zeros(data.shape)
@@ -189,7 +189,7 @@ def seperate_ROIs(nii, res_folder, name):
              clu[1,], clu[2,]] = i
         # tt.append(len(clu))
         img_ROIs = nib.Nifti1Image(mask, affine)
-        path = os.path.join(folder, "clu" + str(i) + "_" + base)
+        path = os.path.join(folder, "clu" + str(i) + "_" + name)
         nib.save(mask, path)
 
 
