@@ -9,6 +9,7 @@ import nibabel as nib
 from nilearn.image import math_img, threshold_img
 from nilearn.masking import intersect_masks
 from sklearn.cluster import KMeans
+from scipy.spatial import distance_matrix
 
 """ People will never want to ROIze only the seed and look at the connectivity
 voxel-wise in the target ? """
@@ -189,8 +190,8 @@ def seperate_ROIs(nii, res_folder, name):
              clu[1,], clu[2,]] = i
         # tt.append(len(clu))
         img_ROIs = nib.Nifti1Image(mask, affine)
-        path = os.path.join(folder, "clu" + str(i) + "_" + name)
-        nib.save(mask, path)
+        path = os.path.join(folder, "clu" + str(i) + "_" + name + ".nii.gz")
+        nib.save(img_ROIs, path)
 
 
     # print(np.unique(tt))
@@ -229,27 +230,6 @@ def testing():
         print(len(arr))
 
 
-import sys
-
-res = sys.argv[3]
-seed = nib.load(os.path.join(res, sys.argv[1]))
-target = nib.load(os.path.join(res, sys.argv[2]))
-
-filename = seed.get_filename()
-base = os.path.basename(filename)
-ind = base.index('.')
-seed_name = base[:ind]
-filename = target.get_filename()
-base = os.path.basename(filename)
-ind = base.index('.')
-target_name = base[:ind]
-
-roized_seed = divide(seed, 3)
-roized_target = divide(target, 3)
-# roization(seed, target, 5, res)
-seperate_ROIs(roized_seed, res, seed_name)
-seperate_ROIs(roized_target, res, target_name)
-
 def test_KMeans(img_name):
     wd = "/data/BCBlab/Data/Parcellotron3000/res_divide/"
     nii = nib.load(os.path.join(wd, "tt/" + img_name))
@@ -269,7 +249,7 @@ def test_KMeans(img_name):
     print("WHIIIIIIIIIIIITE RIBBBBBBBBBBBOOOOOOOONNNN !!!!!")
     test_KMeans("ROIs_WhiteRibbon_masked.nii.gz")
 
-    from scipy.spatial import distance_matrix
+
     m1 = [[4,4,1],[3,5,1]]
     m1[0:2]
     m2 = [[3,7,1],[3,5,1]]
@@ -281,8 +261,31 @@ def test_KMeans(img_name):
 
 
 
-def find_seed(coords, dir):
-    pass
+def find_seed(coords, direc):
+    """ Find (one of) the most distant voxels in a given direction and
+    return its coordinates
+    Parameters
+    ----------
+    coords: np.array (coordinates of each voxel on lines)
+        coordinates of voxels in the mask
+    direc: int
+        0: x
+        1: -x
+        2: y
+        3: -y
+        4: z
+        5: -z
+    Returns
+    -------
+    ext: [(int)x, (int)y, (int)z]
+        the coordinates of the most extreme voxels in the direction direc
+    """
+    side = direc % 2
+    axis = direc // 2
+    a_side = ["np.argmin", "np.argmax"]
+    # print("The direction is: " + ["+", "-"][side] + ["x", "y", "z"][axis])
+    ext = eval(a_side[side])(coords[:,axis])
+    return coords[ext]
 
 def gather_round(seed, coords, size):
     """ Find the nearest voxels from the seed and return an array of their
@@ -300,12 +303,82 @@ def gather_round(seed, coords, size):
     Returns
     -------
     np.array
-        array with the coordinates of the voxels in the cluster of neighbors.
-        So it will contain seed
+        array with the indixes of the nearest voxels(in coords) from seed
+        (the array contains seed)
     """
     dist_mat = distance_matrix(np.array(seed), coords)
-    dist_mat = sorted(dist_mat)
-    return dist_mat[0:size]
+    ind_sort = np.argsort(dist_mat[0], 0, 'mergesort')
+    # neighbours = [coords[i] for i in ind_sort[0:size]]
+    return np.array(ind_sort[0:size])
 
 def divide_compactor(img, size):
-    pass
+    """ Cluster img in groups of a given number of neighbour voxels
+    Parameters
+    ----------
+    img: Nifti1Image
+        The nifti mask of non-zero voxels to cluster
+    size: int
+        The size of each clutser (The last cluster can have a lower number
+        of voxels)
+    Returns
+    -------
+    res_img: Nifti1Image
+        An image with the same dimension than img and its voxels labelled with
+        their cluster number
+    """
+    coords = np.asarray(np.where(img.get_data())).T
+    res_data = np.zeros(img.get_data().shape)
+    clu_lbl = 0
+    while len(coords) > 0:
+        direc = clu_lbl % 6
+        # We want to start by the +x direction but with the cluster label 1
+        clu_lbl = clu_lbl + 1
+        seed = find_seed(coords, direc)
+        tmp_clu = gather_round([seed], coords, size)
+        for i in tmp_clu:
+            v = coords[i]
+            res_data[v[0],v[1],v[2]] = clu_lbl
+        coords = np.delete(coords, tmp_clu, 0)
+    res_img = nib.Nifti1Image(res_data, img.affine)
+    return res_img
+
+import sys
+
+mask = nib.load(sys.argv[1])
+
+gray = nib.load("/data/BCBlab/Data/tests/Thr100_2mm_avg152T1_gray.nii.gz")
+coords = np.asarray(np.where(gray.get_data())).T
+ee = gather_round([[10,41,36]], coords, 5)
+print(len(coords))
+coords = np.delete(coords, ee, 0)
+print(len(coords))
+dd = gray.get_data()
+dd[79,39,34]
+ii = coords[170436]
+ii
+ee = np.array([1,2,4,8])
+np.delete(ee, [1,3])
+res = divide_compactor(gray, 5)
+res.get_data()
+nib.save(res, "/data/BCBlab/Data/tests/clustered_test.nii.gz")
+find_seed(coords, 1)
+clu = nib.load("/data/BCBlab/Data/tests/clustered_test.nii.gz")
+seperate_ROIs(clu, "/data/BCBlab/Data/tests/", "MNI_2mm_divided")
+# res = sys.argv[3]
+# seed = nib.load(os.path.join(res, sys.argv[1]))
+# target = nib.load(os.path.join(res, sys.argv[2]))
+
+# filename = seed.get_filename()
+# base = os.path.basename(filename)
+# ind = base.index('.')
+# seed_name = base[:ind]
+# filename = target.get_filename()
+# base = os.path.basename(filename)
+# ind = base.index('.')
+# target_name = base[:ind]
+#
+# roized_seed = divide(seed, 3)
+# roized_target = divide(target, 3)
+# # roization(seed, target, 5, res)
+# seperate_ROIs(roized_seed, res, seed_name)
+# seperate_ROIs(roized_target, res, target_name)

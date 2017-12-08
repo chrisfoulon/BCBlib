@@ -8,6 +8,8 @@
   $6 = lower threshold for disconnectomes'; exit 1; }
 
 
+echo $@
+
 fileName() {
   name=$(basename $1)
   name=${name%%.*}
@@ -24,7 +26,23 @@ then
 fi;
 
 mkdir -p $5
-echo ""
+echo "fsleyes render \
+  -no \
+  -sz 1800 800 \
+  -of=$5/`fileName $2`.png \
+  -hc \
+  --scene=lightbox \
+  -nr=3 \
+  -nc=8 \
+  -ss=5.6 \
+  -zr 16 149 \
+  $1 \
+  $disco \
+  -cm=hot \
+  -dr $thr 1 \
+  $les \
+  -ot=mask \
+  -mc 0 0 1"
 fsleyes render \
   -no \
   -sz 1800 800 \
