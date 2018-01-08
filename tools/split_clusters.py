@@ -20,8 +20,7 @@ def split_clusters(nii, res_folder, name):
     for i in np.arange(1, o_max + 1):
         clu = np.array(np.where(data == i))
         mask = np.zeros(data.shape)
-        mask[clu[0,],
-             clu[1,], clu[2,]] = i
+        mask[clu[0,], clu[1,], clu[2,]] = i
         # tt.append(len(clu))
         img_ROIs = nib.Nifti1Image(mask, affine)
         path = os.path.join(folder, "clu" + str(i) + "_" + name + ".nii.gz")
