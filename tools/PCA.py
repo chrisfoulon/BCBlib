@@ -7,40 +7,71 @@ import pandas as pd
 from sklearn import decomposition
 import sklearn.covariance as sco
 import tools.mat_transform as mt
+# import mat_transform as mt
 
 path = "/data/neurosynth_data/Wholebrain.csv"
 path2 = "/data/neurosynth_data/unrotated_components.csv"
 mat = pd.read_csv(filepath_or_buffer=path, header=0)
 pmat = mat[mat.columns[4:]]
-type(cov)
 cov = pmat.cov()
-corr = pmat.corr()
-test_cov = np.cov(np.array(pmat).T)
-sys.getsizeof(cov)
-tmat = pmat.T
-terms = tmat.index
-tcov = tmat.cov()
-skcov = sco.empirical_covariance(np.array(pmat.T))
+type(cov)
+# corr = pmat.corr()
+# test_cov = np.cov(np.array(pmat).T)
+# sys.getsizeof(cov)
+# tmat = pmat.T
+# terms = tmat.index
+# tcov = tmat.cov()
+# skcov = sco.empirical_covariance(np.array(pmat.T))
+#
+# raw = np.array([[ 10, 10, 10],
+#                 [ 5, 20, 30],
+#                 [ 6, 15, 7],
+#                 [ 6, 21, 29],
+#                 [ 31, 11, 4]])
+# cov = np.cov(raw)
+# np.dot(raw, raw.T)/5
+# matrix = np.array([[ 0.05,  0.05,  0., 0.75, 0.5],
+#                 [ 0.05,  0.95,  0.05, 0.5, 0.05],
+#                 [ 0.05,  0.95,  0.05, 0.5, 0.05],
+#                 [ 0.25,  0.5,  0.75, 0.5, 0.25],
+#                 [ 0.25,  0.25,  0.25, 0.25, 0.25]])
+# sco.empirical_covariance(matrix)
+# np.cov(matrix)
+# pd.DataFrame(matrix).cov()
+# matrix[2, 1:]
+# matrix = cov
+# path_pref = "osef"
+# rot='quartimax'
+d, v = np.linalg.eig(cov)
+# Sort values avec vectors in decreasing order
+indsorted = d.argsort()[::-1]
+d = d[indsorted]
+v = v[:,indsorted]
+l = v * np.sqrt(d)
+l.shape
+po = np.power(l, 2)
 
-raw = np.array([[ 10, 10, 10],
-                [ 5, 20, 30],
-                [ 6, 15, 7],
-                [ 6, 21, 29],
-                [ 31, 11, 4]])
-cov = np.cov(raw)
-np.dot(raw, raw.T)/5
-matrix = np.array([[ 0.05,  0.05,  0., 0.75, 0.5],
-                [ 0.05,  0.95,  0.05, 0.5, 0.05],
-                [ 0.05,  0.95,  0.05, 0.5, 0.05],
-                [ 0.25,  0.5,  0.75, 0.5, 0.25],
-                [ 0.25,  0.25,  0.25, 0.25, 0.25]])
-sco.empirical_covariance(matrix)
-np.cov(matrix)
-pd.DataFrame(matrix).cov()
-matrix[2, 1:]
-matrix = cov
-path_pref = "osef"
-rot='quartimax'
+com_full = np.sum(po, axis=0)
+
+eigval_thr = 1
+comp_thr = eigval_thr * np.mean(d)
+ind = 0
+while d[ind] > comp_thr:
+    ind += 1
+# we have the number of values > comp_thr but the index of the last is minus 1
+# ind -= 1
+l_trunc = l[:,0:ind]
+l_trunc.shape
+d[68]
+comp_thr
+pd.DataFrame(l_trunc)
+
+com = np.sum(np.power(l_trunc, 2), axis=0)
+
+com_scaled = com/com_full[0:len(com)]
+# We could run loads of PCA and then use what Slava did to correlate the values
+# across the trials to display how much confident we are for each component
+
 
 def parcellate_PCA(matrix, mat_type, path_pref, rot='quartimax', eigval_thr=1):
         """ Parellate a 2D similarity matrix with the PCA algorithm
