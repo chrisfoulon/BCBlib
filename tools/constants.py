@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import numpy as np
 
 import nibabel as nib
@@ -26,3 +27,10 @@ def empty_MNI1MM():
 def empty_MNI2MM():
     data = np.zeros(SHAPE_MNI_2MM)
     return nib.Nifti1Image(data, AFFINE_MNI_2MM)
+
+def get_data_folder():
+    os.path.join(os.path.dirname(os.path.dirname(
+        os.path.dirname(__file__))), "Data")
+
+def get_ants_priors_folder():
+    os.path.join(get_data_folder, "ants_priors")
