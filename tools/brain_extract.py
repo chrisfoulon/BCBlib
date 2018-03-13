@@ -5,8 +5,8 @@ import os
 import nipype.interfaces.ants as ants
 import BCBlib.tools.constants as cst
 
-proba = os.path.join(cst.get_ants_priors_folder, "brainPrior.nii.gz")
-temp = os.path.join(cst.get_ants_priors_folder,
+proba = os.path.join(cst.get_ants_priors_folder(), "brainPrior.nii.gz")
+temp = os.path.join(cst.get_ants_priors_folder(),
                            "brainWithSkullTemplate.nii.gz")
 
 def skull_strip(dim, anatomical, brain_proba=proba, template=temp):

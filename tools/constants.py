@@ -29,8 +29,8 @@ def empty_MNI2MM():
     return nib.Nifti1Image(data, AFFINE_MNI_2MM)
 
 def get_data_folder():
-    os.path.join(os.path.dirname(os.path.dirname(
+    return os.path.join(os.path.dirname(os.path.dirname(
         os.path.dirname(__file__))), "Data")
 
 def get_ants_priors_folder():
-    os.path.join(get_data_folder(), "ants_priors")
+    return os.path.join(get_data_folder(), "ants_priors")
