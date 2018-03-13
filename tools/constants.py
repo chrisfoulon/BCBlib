@@ -33,4 +33,4 @@ def get_data_folder():
         os.path.dirname(__file__))), "Data")
 
 def get_ants_priors_folder():
-    os.path.join(get_data_folder, "ants_priors")
+    os.path.join(get_data_folder(), "ants_priors")

@@ -3,7 +3,7 @@
 import os
 
 import nipype.interfaces.ants as ants
-import constants as cst
+import BCBlib.tools.constants as cst
 
 proba = os.path.join(cst.get_ants_priors_folder, "brainPrior.nii.gz")
 temp = os.path.join(cst.get_ants_priors_folder,
