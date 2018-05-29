@@ -10,6 +10,7 @@ import tools.segment as seg
 if len(sys.argv) < 3:
     print("You must provide at least the dimension of the image")
     print("and the anatomical image.")
+    exit()
 
 dim = sys.argv[1]
 anat = sys.argv[2]

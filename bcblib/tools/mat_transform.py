@@ -10,7 +10,7 @@ def matrix_log2(matrix):
     """ Apply log in base 2 on the matrix
     Parameters
     ----------
-    matrix = 2D np.array
+    matrix: 2D np.array
         Typically a 2D matrix seed by target
     Returns
     -------
@@ -26,12 +26,12 @@ def matrix_zscore(matrix):
     """ Apply Z-score transformation on the matrix
     Parameters
     ----------
-    matrix = 2D np.array
+    matrix: 2D np.array
         Typically a 2D matrix seed by target
 
     Returns
     -------
-    z_matrix : 2D np.array
+    z_matrix: 2D np.array
         Zscore of connectivity_matrix, replacing each value with its Z score
         across ROIs
     """

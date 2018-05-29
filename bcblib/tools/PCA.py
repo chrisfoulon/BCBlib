@@ -12,9 +12,47 @@ import tools.mat_transform as mt
 path = "/data/neurosynth_data/Wholebrain.csv"
 path2 = "/data/neurosynth_data/unrotated_components.csv"
 mat = pd.read_csv(filepath_or_buffer=path, header=0)
+
 pmat = mat[mat.columns[4:]]
 cov = pmat.cov()
 type(cov)
+g, omega = np.linalg.eig(cov)
+# So g is the vector containing the eigenvalues and SPSS take their absolute val
+g = np.abs(g)
+# According to SPSS gamma is a diagonal matrix
+gamma = np.diag(g)
+# Communalities (it is a vector)
+# h0 = np.sum(g*(omega[0]**2))
+# len(range(len(omega)))
+h = [np.sum(g*(omega[i]**2)) for i in range(len(omega))]
+np.testing.assert_almost_equal(np.diag(cov), h, decimal=5)
+np.isclose(np.diag(cov), h, rtol=1e-07).all()
+diag_h = np.diag(h)
+# The matrix of factor laodings
+lam = np.dot(omega, np.sqrt(gamma))
+pd.DataFrame(lam)
+norm_lam = np.dot(np.sqrt(diag_h), lam)
+pd.DataFrame(norm_lam)
+lam[:,0]
+lam.shape
+diag_h.shape
+norm_lam.shape
+n = len(h)
+m = len(norm_lam)
+
+# svi = np.sum(n * np.sum())
+def n_pow_four(mat, j, n):
+    return n * np.sum(mat[:,j]**4)
+
+def pow2_pow2(mat, j, n):
+    return np.sum(mat[:,j]**2)**2
+len(range(10))
+len(np.array([[1,2,3],[4,5,6]]))
+norm_lam[1]
+for j in range(m):
+    n * np.sum(norm_lam[:,j]**4) - np.sum(norm_lam[:,j]**2)**2
+
+svi = np.sum([n * np.sum(norm_lam[:,j]**4) - np.sum(norm_lam[:,j]**2)**2  for j in range(len(norm_lam))])/(n**2)
 # corr = pmat.corr()
 # test_cov = np.cov(np.array(pmat).T)
 # sys.getsizeof(cov)
