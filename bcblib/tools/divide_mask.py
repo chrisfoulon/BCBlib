@@ -5,6 +5,7 @@ import numpy as np
 import nibabel as nib
 from scipy.spatial import distance_matrix
 
+
 def find_seed(coords, direc):
     """ Find (one of) the most distant voxels in a given direction and
     return its coordinates
@@ -28,8 +29,9 @@ def find_seed(coords, direc):
     axis = direc // 2
     a_side = ["np.argmin", "np.argmax"]
     # print("The direction is: " + ["+", "-"][side] + ["x", "y", "z"][axis])
-    ext = eval(a_side[side])(coords[:,axis])
+    ext = eval(a_side[side])(coords[:, axis])
     return coords[ext]
+
 
 def gather_round(seed, coords, size):
     """ Find the nearest voxels from the seed and return an array of their
@@ -54,6 +56,7 @@ def gather_round(seed, coords, size):
     ind_sort = np.argsort(dist_mat[0], 0, 'mergesort')
     # neighbours = [coords[i] for i in ind_sort[0:size]]
     return np.array(ind_sort[0:size])
+
 
 def divide_compactor(img, size):
     """ Cluster img in groups of a given number of neighbour voxels
@@ -81,7 +84,7 @@ def divide_compactor(img, size):
         tmp_clu = gather_round([seed], coords, size)
         for i in tmp_clu:
             v = coords[i]
-            res_data[v[0],v[1],v[2]] = clu_lbl
+            res_data[v[0], v[1], v[2]] = clu_lbl
         coords = np.delete(coords, tmp_clu, 0)
     res_img = nib.Nifti1Image(res_data, img.affine)
     return res_img

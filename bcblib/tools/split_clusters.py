@@ -9,7 +9,7 @@ import nibabel as nib
 def float_in_filename(num):
     """ Function to remove the "." of the float to avoid it in filenames.
     It convert the Numeric input into a str
-    If the input is simply an int, it just convert it into str
+    If the input is simply an int, it just converts it into str
     Parameters
     ----------
     num: Numeric
@@ -24,6 +24,7 @@ def float_in_filename(num):
         return spl[0]
     else:
         print("uknown value: " + str(num))
+
 
 def split_clusters(nii, res_folder, name):
     """ Split a 3D image into several nifti files. Each one containing a
@@ -52,7 +53,7 @@ def split_clusters(nii, res_folder, name):
         if exc.errno != errno.EEXIST:
             raise
         pass
-
+    # TODO change the amax for a walk through an array of the unique values
     # find the maximum value of the source
     o_max = np.amax(data)
     if np.amin(data) < 0:
