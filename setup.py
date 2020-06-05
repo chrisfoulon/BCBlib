@@ -23,6 +23,7 @@ setup(
         "Data": ["*"],
         "bash": ["*"],
     },
+    author='Chris Foulon, Michel Thiebaut de Schotten',
     entry_points={
         'console_scripts': ['generate_synth_lesions = bcblib.scripts.generate_synth_lesions:main',
                             'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main']

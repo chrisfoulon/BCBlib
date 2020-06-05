@@ -1,3 +1,8 @@
+"""
+Generate matched synthetic lesions dataset
+
+Authors: Chris Foulon & Michel Thiebaut de Scotten
+"""
 import os
 import argparse
 import random
