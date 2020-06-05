@@ -26,13 +26,13 @@ def read_simple_list_from_csv(csv_path):
     return out_list
 
 
-def list_synth_les(synth_lesion_size_dict, size, number, size_range=0.1, pick_up_strat='random'):
+def list_synth_les(synth_lesion_size_dict, exclude_list, size, number, size_range=0.1, pick_up_strat='random'):
     if size_range >= 1:
         size_range = size_range / 100
     file_list = []
     for s in synth_lesion_size_dict:
         if size - size_range * size <= int(s) <= size + size_range * size:
-            file_list = file_list + synth_lesion_size_dict[s]
+            file_list = file_list + [f for f in synth_lesion_size_dict[s] if f not in exclude_list]
     if number > len(file_list):
         # number = len(file_list)
         raise ValueError('Cannot find {} images of {} +- {} voxels in the synth dataset. '
@@ -55,7 +55,8 @@ def filter_synth_lesion_size_dict(synth_lesion_size_dict, exclude_list):
 def __pick_up_synth_list(synth_lesion_size_dict, size_list, number=1, size_range=0.1, pick_up_strat='random'):
     synth_list = []
     for s in size_list:
-        synth_list = synth_list + list_synth_les(synth_lesion_size_dict, s, number, size_range, pick_up_strat)
+        synth_list = synth_list + list_synth_les(synth_lesion_size_dict, synth_list, s, number, size_range,
+                                                 pick_up_strat)
     return synth_list
 
 
@@ -195,6 +196,7 @@ def main():
 
     size_list = [len(np.where(nib.load(les).get_fdata())[0]) for les in les_list]
     print(size_list)
+    print(len(size_list))
 
     final_list = pick_up_synth_list(synth_lesion_size_dict, size_list, list_file_path,
                                     copy_synth_files=args.copy_synth_files,
@@ -203,6 +205,7 @@ def main():
                                     pick_up_strat=args.pickup_strat,
                                     exclude_lists=exclude_lists,
                                     number_pickup=args.multiple_lists)
+    print(len(final_list))
 
 
 if __name__ == '__main__':
