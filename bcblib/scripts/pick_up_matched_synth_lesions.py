@@ -195,8 +195,6 @@ def main():
         exclude_lists = None
 
     size_list = [len(np.where(nib.load(les).get_fdata())[0]) for les in les_list]
-    print(size_list)
-    print(len(size_list))
 
     final_list = pick_up_synth_list(synth_lesion_size_dict, size_list, list_file_path,
                                     copy_synth_files=args.copy_synth_files,
@@ -205,7 +203,6 @@ def main():
                                     pick_up_strat=args.pickup_strat,
                                     exclude_lists=exclude_lists,
                                     number_pickup=args.multiple_lists)
-    print(len(final_list))
 
 
 if __name__ == '__main__':
