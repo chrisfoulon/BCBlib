@@ -190,6 +190,8 @@ def main():
 
     if args.exclude_lists is not None:
         exclude_lists = [read_simple_list_from_csv(f) for f in args.exclude_lists]
+    else:
+        exclude_lists = None
 
     size_list = [len(np.where(nib.load(les).get_fdata())[0]) for les in les_list]
     print(size_list)
