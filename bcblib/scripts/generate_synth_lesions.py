@@ -90,7 +90,7 @@ def main():
     parser.add_argument('-o', '--output', type=str, help='output folder')
     parser.add_argument('-fwhm', '--smoothing_param', type=int, default='12',
                         help='fwhm parameter to nilearn smooth_img function')
-    parser.add_argument('-thr', '--smoothing_threshold', type=int, default=0.5,
+    parser.add_argument('-thr', '--smoothing_threshold', type=float, default=0.5,
                         help='Threshold applied on the smoothing')
 
     # parser.add_argument('-v', '--verbose', default='info', choices=['none', 'info', 'debug'], nargs='?', const='info',
