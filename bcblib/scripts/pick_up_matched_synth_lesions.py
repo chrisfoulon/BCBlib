@@ -18,25 +18,25 @@ import nibabel as nib
 
 
 def read_simple_list_from_csv(csv_path):
-    if not os.path.isfile(csv_path):
-        raise ValueError('{} is not a file'.format(csv_path))
-    with open(csv_path, 'r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        out_list = [f[0] for f in csv_reader]
-    return out_list
+    with open(csv_path) as csv_file:
+        out_list = []
+        for row in csv.reader(csv_file):
+            if len(row) > 1:
+                out_list += [r for r in row]
+            else:
+                out_list.append(row[0])
+        return out_list
 
 
-def list_synth_les(synth_lesion_size_dict, size, number, size_range=0.1, pick_up_strat='random'):
-    if size_range >= 1:
-        size_range = size_range / 100
+def list_synth_les(synth_lesion_size_dict, exclude_list, size, number, size_range=0.1, pick_up_strat='random'):
     file_list = []
     for s in synth_lesion_size_dict:
         if size - size_range * size <= int(s) <= size + size_range * size:
-            file_list = file_list + synth_lesion_size_dict[s]
+            file_list = file_list + [f for f in synth_lesion_size_dict[s] if f not in exclude_list]
     if number > len(file_list):
         # number = len(file_list)
-        raise ValueError('Cannot find {} images of {} +- {} voxels in the synth dataset. '
-                         'Try to increase the size range'.format(number, size, number * size_range))
+        raise ValueError('Cannot find {} image(s) of {} +- {} voxels in the synth dataset. '
+                         'Try to increase the size range'.format(number, size, size * size_range))
     if pick_up_strat == 'random':
         return random.sample(file_list, k=number)
     else:
@@ -55,7 +55,8 @@ def filter_synth_lesion_size_dict(synth_lesion_size_dict, exclude_list):
 def __pick_up_synth_list(synth_lesion_size_dict, size_list, number=1, size_range=0.1, pick_up_strat='random'):
     synth_list = []
     for s in size_list:
-        synth_list = synth_list + list_synth_les(synth_lesion_size_dict, s, number, size_range, pick_up_strat)
+        synth_list = synth_list + list_synth_les(synth_lesion_size_dict, synth_list, s, number, size_range,
+                                                 pick_up_strat)
     return synth_list
 
 
@@ -85,6 +86,7 @@ def save_new_list(synth_list, filepath):
         employee_writer = csv.writer(f, delimiter='\n', quotechar='"',
                                      quoting=csv.QUOTE_MINIMAL)
         employee_writer.writerow(synth_list)
+        print('synth lesions list created at {}'.format(new_filepath))
         return new_filepath
 
 
@@ -94,6 +96,7 @@ def copy_picked_up_synth(file_list, output_folder):
     os.makedirs(output_folder)
     for file in file_list:
         shutil.copyfile(file, os.path.join(output_folder, os.path.basename(file)))
+    print('synth lesions copied in {}'.format(output_folder))
 
 
 def copy_picked_up_list(file_list, filepath):
@@ -162,9 +165,12 @@ def main():
     # parser.add_argument('-v', '--verbose', default='info', choices=['none', 'info', 'debug'], nargs='?', const='info',
     #                     type=str, help='print info or debugging messages [default is "info"] ')
     args = parser.parse_args()
+    # Convert all the paths given in inputs into absolute paths os.path.abspath(
     if args.input_path is not None:
+        args.input_path = os.path.abspath(args.input_path)
         les_list = [os.path.join(args.input_path, f) for f in os.listdir(args.input_path)]
     else:
+        args.input_list = os.path.abspath(args.input_list)
         if not os.path.exists(args.input_list):
             raise ValueError(args.input_list + ' does not exist.')
         if args.input_list.endswith('.csv'):
@@ -172,12 +178,14 @@ def main():
         else:
             # default delimiter is ' ', it might need to be changed
             les_list = np.loadtxt(args.input_list, dtype=str, delimiter=' ')
+        les_list = [os.path.abspath(f) for f in les_list]
 
+    args.output = os.path.abspath(args.output)
     if os.path.isdir(args.output):
         list_file_path = os.path.join(args.output, output_list_filename)
     else:
         list_file_path = args.output
-
+    args.synth_dict = os.path.abspath(args.synth_dict)
     if not os.path.isfile(args.synth_dict):
         raise ValueError('[{}] is not an existing synthetic lesion dict')
     try:
@@ -190,9 +198,11 @@ def main():
 
     if args.exclude_lists is not None:
         exclude_lists = [read_simple_list_from_csv(f) for f in args.exclude_lists]
+        exclude_lists = [os.path.abspath(f) for f in exclude_lists]
+    else:
+        exclude_lists = None
 
     size_list = [len(np.where(nib.load(les).get_fdata())[0]) for les in les_list]
-    print(size_list)
 
     final_list = pick_up_synth_list(synth_lesion_size_dict, size_list, list_file_path,
                                     copy_synth_files=args.copy_synth_files,

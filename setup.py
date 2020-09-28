@@ -8,14 +8,14 @@ def read(fname):
 
 setup(
     name='bcblib',        # This is the name of your PyPI-package.
-    version='0.2',     # Update the version number for new releases
+    version='0.2.3',     # Update the version number for new releases
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
     keywords='brain neuroimaging',
     long_description=read('README.rst'),
     zip_safe=True,
     include_package_data=True,
     packages=find_packages(exclude=['__pycache__']),
-    install_requires=['nibabel', 'numpy', 'six', 'scipy', 'nilearn', 'sklearn'],
+    install_requires=['nibabel>=3', 'numpy', 'six', 'scipy', 'nilearn', 'sklearn'],
     package_data={
         # If any package contains *.txt or *.rst files, include them:
         "": ["*.txt", "*.rst"],

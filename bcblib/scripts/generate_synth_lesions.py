@@ -90,14 +90,15 @@ def main():
     parser.add_argument('-o', '--output', type=str, help='output folder')
     parser.add_argument('-fwhm', '--smoothing_param', type=int, default='12',
                         help='fwhm parameter to nilearn smooth_img function')
-    parser.add_argument('-thr', '--smoothing_threshold', type=int, default=0.5,
+    parser.add_argument('-thr', '--smoothing_threshold', type=float, default=0.5,
                         help='Threshold applied on the smoothing')
 
     # parser.add_argument('-v', '--verbose', default='info', choices=['none', 'info', 'debug'], nargs='?', const='info',
     #                     type=str, help='print info or debugging messages [default is "info"] ')
     args = parser.parse_args()
-
+    args.output = os.path.abspath(args.output)
     if args.mask is not None:
+        args.mask = os.path.abspath(args.mask)
         if not os.path.exists(args.mask):
             raise ValueError('The mask {} does not exist'.format(args.mask))
         coverage_mask = nib.load(args.mask)
@@ -109,11 +110,16 @@ def main():
                 raise ValueError(args.input_list + ' does not exist.')
             if args.input_list.endswith('.csv'):
                 with open(args.input_list, 'r') as csv_file:
-                    csv_reader = csv.reader(csv_file)
-                    les_list = [f[0] for f in csv_reader]
+                    les_list = []
+                    for row in csv.reader(csv_file):
+                        if len(row) > 1:
+                            les_list += [r for r in row]
+                        else:
+                            les_list.append(row[0])
             else:
                 # default delimiter is ' ', it might need to be changed
                 les_list = np.loadtxt(args.input_list, dtype=str, delimiter=' ')
+        les_list = [os.path.abspath(f) for f in les_list]
         coverage_mask = create_coverage_mask(les_list)
         nib.save(coverage_mask, os.path.join(args.output, 'coverage_mask.nii.gz'))
     thr = args.smoothing_threshold
@@ -155,7 +161,7 @@ def main():
                 file_path = os.path.join(args.output, file_name)
                 synth_lesion_size_dict[lesion_size].append(file_path)
             nib.save(lesion, file_path)
-    with open(os.path.join(args.output, 'lesion_dict.json'), 'w+') as out_file:
+    with open(os.path.join(args.output, '__lesion_dict.json'), 'w+') as out_file:
         json.dump(synth_lesion_size_dict, out_file, indent=4)
 
 
