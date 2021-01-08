@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import random
 
 import nibabel as nib
 from scipy.spatial import distance_matrix
@@ -58,23 +59,29 @@ def gather_round(seed, coords, size):
     return np.array(ind_sort[0:size])
 
 
-def divide_compactor(img, size):
-    """ Cluster img in groups of a given number of neighbour voxels
+def divide_compactor(img, size, random_labels=False):
+    """ Cluster img in groups of a given number of neighbour voxels (Be sure to use a skull stripped image as the
+    function divides all non-zero voxel)
     Parameters
     ----------
     img: Nifti1Image
         The nifti mask of non-zero voxels to cluster
     size: int
-        The size of each clutser (The last cluster can have a lower number
+        The size of each cluster (The last cluster can have a lower number
         of voxels)
+    random_labels: bool
+        (default: False) generate the labels randomly or not
     Returns
     -------
     res_img: Nifti1Image
         An image with the same dimension than img and its voxels labelled with
         their cluster number
     """
-    coords = np.asarray(np.where(img.get_data())).T
-    res_data = np.zeros(img.get_data().shape)
+    coords = np.asarray(np.where(img.get_fdata())).T
+    res_data = np.zeros(img.shape)
+    if random_labels:
+        lbl_num = round(len(coords) / size) + 1
+        label_list = random.sample(range(lbl_num), lbl_num)
     clu_lbl = 0
     while len(coords) > 0:
         direc = clu_lbl % 6
@@ -84,7 +91,10 @@ def divide_compactor(img, size):
         tmp_clu = gather_round([seed], coords, size)
         for i in tmp_clu:
             v = coords[i]
-            res_data[v[0], v[1], v[2]] = clu_lbl
+            if random_labels:
+                res_data[v[0], v[1], v[2]] = label_list[clu_lbl]
+            else:
+                res_data[v[0], v[1], v[2]] = clu_lbl
         coords = np.delete(coords, tmp_clu, 0)
     res_img = nib.Nifti1Image(res_data, img.affine)
     return res_img
