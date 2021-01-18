@@ -1,6 +1,0 @@
-nibabel>=3
-numpy
-six
-scipy
-nilearn
-sklearn
