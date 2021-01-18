@@ -1,0 +1,19 @@
+Metadata-Version: 1.2
+Name: bcblib
+Version: 0.2.3
+Summary: UNKNOWN
+Home-page: UNKNOWN
+Author: Chris Foulon, Michel Thiebaut de Schotten
+License: UNKNOWN
+Project-URL: Source, https://github.com/chrisfoulon/BCBlib
+Project-URL: Bug Reports, https://github.com/chrisfoulon/BCBlib/issues
+Project-URL: BCBlab website, http://bcblab.com
+Description: =============================
+        BCBlib: neuroimaging analyses
+        =============================
+        
+        Under development
+        
+        Repository of scripts and tools used for MRI data analysis
+Keywords: brain neuroimaging
+Platform: UNKNOWN
