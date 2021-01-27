@@ -1,7 +1,30 @@
 import os
 from pathlib import Path
+import csv
+import numpy as np
 
 import nibabel as nib
+
+
+def is_nifti(filename):
+    return str(filename)[-4:] == '.nii' or str(filename)[-7:] == '.nii.gz'
+
+
+def file_to_list(file_path, delimiter=' '):
+    if not os.path.exists(file_path):
+        raise ValueError(file_path + ' does not exist.')
+    if file_path.endswith('.csv'):
+        with open(file_path, 'r') as csv_file:
+            dir_list = []
+            for row in csv.reader(csv_file):
+                if len(row) > 1:
+                    dir_list += [r for r in row]
+                else:
+                    dir_list.append(row[0])
+    else:
+        # default delimiter is ' ', it might need to be changed
+        dir_list = np.loadtxt(file_path, dtype=str, delimiter=delimiter)
+    return dir_list
 
 
 def load_nifti(img):
