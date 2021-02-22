@@ -8,7 +8,7 @@ def read(fname):
 
 setup(
     name='bcblib',        # This is the name of your PyPI-package.
-    version='0.2.5',     # Update the version number for new releases
+    version='0.2.6',     # Update the version number for new releases
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
     keywords='brain neuroimaging',
     long_description=read('README.rst'),
@@ -24,6 +24,7 @@ setup(
         "bash": ["*"],
     },
     author='Chris Foulon, Michel Thiebaut de Schotten',
+    author_email="hd.chrisfoulon@gmail.com",
     entry_points={
         'console_scripts': ['generate_synth_lesions = bcblib.scripts.generate_synth_lesions:main',
                             'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main']

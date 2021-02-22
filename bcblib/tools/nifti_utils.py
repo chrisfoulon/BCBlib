@@ -77,14 +77,16 @@ def reorient_to_canonical(img, save=False):
     return nii
 
 
-def reorient_nifti_list(nifti_list, save=False, discard_errors=False):
+def reorient_nifti_list(nifti_list, output_dir=None, save_in_place=False, discard_errors=False):
     """
     WARNING: the input images are modified
     Try to reorient the input images to the canonical RAS+ orientation
     Parameters
     ----------
     nifti_list : list of nibabel.Nifti1Image or list of path-like object
-    save : bool
+    output_dir : path-like object
+        optional is save_in_place is True. If given, the reoriented images will be saved in the output directory
+    save_in_place : bool
         save the reoriented images in place of the input images
     discard_errors : bool
         If True : if an image cannot be reoriented because of an error due to corrupted data (preventing nibabel from
@@ -95,16 +97,19 @@ def reorient_nifti_list(nifti_list, save=False, discard_errors=False):
     -------
     reoriented_list : list of nibabel.Nifti1Image
     """
+    if (output_dir is None or not Path(output_dir).is_dir()) and not save_in_place:
+        raise Exception('output_dir does not exist or is missing. output_dir MUST be given IF save_in_place is False')
     reoriented_list = []
     for nii in nifti_list:
         try:
             nii = load_nifti(nii)
             img = reorient_to_canonical(nii)
-            if save:
+            if output_dir is not None and Path(output_dir).is_dir():
+                img.set_filename(Path(output_dir, Path(nii.get_filename()).name))
+            if save_in_place:
                 img.set_filename(nii.get_filename())
-                if discard_errors:
-                    nib.save(img, img.get_filename())
-            reoriented_list.append(img)
+            nib.save(img, img.get_filename())
+            reoriented_list.append(img.get_filename())
         except TypeError as e:
             if isinstance(nii, nib.Nifti1Image):
                 fname = nii.get_filename()
@@ -117,9 +122,6 @@ def reorient_nifti_list(nifti_list, save=False, discard_errors=False):
                 raise TypeError('Error in file {}: {}'.format(fname, e))
         except ValueError as e:
             raise e
-    if save and not discard_errors:
-        for nii in reoriented_list:
-            nib.save(nii, nii.get_filename())
     return reoriented_list
 
 
