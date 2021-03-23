@@ -43,7 +43,8 @@ def load_nifti(img):
         if Path(img).is_file():
             img = nib.load(img, mmap=False)
     if not isinstance(img, nib.Nifti1Image):
-        raise ValueError('img must either be a valid path or a nibabel.Nifti1Image')
+        raise ValueError(
+            'bcblib.tools.load_nifti error: {} must either be a valid path or a nibabel.Nifti1Image'.format(img))
     return img
 
 
