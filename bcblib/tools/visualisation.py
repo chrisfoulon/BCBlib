@@ -9,7 +9,7 @@ import numpy as np
 from bcblib.tools.nifti_utils import is_nifti
 
 
-def mricron_display(paths: Union[Union[str, bytes, os.PathLike], Collection[Union[str, bytes, os.PathLike]]], *args):
+def mricron_display_old(paths: Union[Union[str, bytes, os.PathLike], Collection[Union[str, bytes, os.PathLike]]], *args):
     if isinstance(paths, str):
         paths = [paths]
 
@@ -21,6 +21,20 @@ def mricron_display(paths: Union[Union[str, bytes, os.PathLike], Collection[Unio
             overlays.append('-o')
             overlays.append(path)
         mricron_command = ['mricron', paths[0], *overlays, *args]
+    print('Mricron command: "{}"'.format(mricron_command))
+    process = subprocess.run(mricron_command,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             universal_newlines=True)
+    return process
+
+
+def mricron_display(path: Union[str, bytes, os.PathLike],
+                    options: Collection[Union[str, bytes, os.PathLike]] = None):
+    opt = []
+    if options is not None:
+        opt = list(options)
+    mricron_command = ['mricron', path] + opt
     print('Mricron command: "{}"'.format(mricron_command))
     process = subprocess.run(mricron_command,
                              stdout=subprocess.PIPE,
