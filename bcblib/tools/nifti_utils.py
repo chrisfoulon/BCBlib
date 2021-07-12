@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 import csv
+
+from tqdm import tqdm
 import numpy as np
 from scipy.spatial.distance import euclidean
 from scipy.ndimage.measurements import center_of_mass
@@ -104,7 +106,7 @@ def reorient_nifti_list(nifti_list, output_dir=None, save_in_place=False, discar
         raise Exception('output_dir does not exist or is missing. output_dir MUST be given IF save_in_place is False')
     reoriented_list = []
     failed_list = []
-    for nii in nifti_list:
+    for nii in tqdm(nifti_list, desc='Reorient Nifti list'):
         try:
             nii = load_nifti(nii)
             img = reorient_to_canonical(nii)
@@ -170,7 +172,7 @@ def resave_nifti_list(nifti_list, output_dir=None, save_in_place=False, discard_
     ----------
     nifti_list : list of nibabel.Nifti1Image or list of path-like object
     output_dir : path-like object
-        optional is save_in_place is True. If given, the reoriented images will be saved in the output directory
+        optional if save_in_place is True. If given, the reoriented images will be saved in the output directory
     save_in_place : bool
         save the reoriented images in place of the input images
     discard_errors : bool
@@ -231,3 +233,33 @@ def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, rou
     for f in nifti_list:
         distance_dict[str(f)] = centre_of_mass_difference(f, reference, round_centres)
     return distance_dict
+
+
+def nifti_overlap_images(input_images, filter_pref=''):
+    if not isinstance(input_images, list):
+        if Path(input_images).is_file():
+            input_images = file_to_list(input_images)
+        elif Path(input_images).is_dir():
+            input_images = [str(p) for p in Path(input_images).iterdir() if is_nifti(p)]
+        else:
+            raise ValueError('Wrong input (must be a file/directory path of a list of paths)')
+    if filter_pref:
+        input_images = [p for p in input_images if Path(p).name.startswith(filter_pref)]
+    temp_overlap = None
+    temp_overlap_data = None
+    for img in tqdm(input_images):
+        nii = nib.load(img)
+        if temp_overlap is None:
+            temp_overlap = nii
+            temp_overlap_data = nii.get_fdata()
+        else:
+            temp_overlap_data += nii.get_fdata()
+    temp_overlap = nib.Nifti1Image(temp_overlap_data, temp_overlap.affine)
+    return temp_overlap
+
+
+def overlaps_subfolders(root_folder, filter_pref=''):
+    for subfolder in root_folder.iterdir():
+        print(f'Overlap of [{subfolder.name}]')
+        overlap_path = Path(root_folder, 'overlap_' + subfolder.name + 'nii')
+        nib.save(nifti_overlap_images(subfolder, filter_pref), overlap_path)
