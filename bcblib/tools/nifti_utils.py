@@ -15,9 +15,10 @@ def is_nifti(filename):
 
 
 def file_to_list(file_path, delimiter=' '):
-    if not os.path.exists(file_path):
-        raise ValueError(file_path + ' does not exist.')
-    if file_path.endswith('.csv'):
+    file_path = Path(file_path)
+    if not file_path.is_file():
+        raise ValueError(f'{file_path} does not exist.')
+    if file_path.name.endswith('.csv'):
         with open(file_path, 'r') as csv_file:
             dir_list = []
             for row in csv.reader(csv_file):
@@ -27,7 +28,7 @@ def file_to_list(file_path, delimiter=' '):
                     dir_list.append(row[0])
     else:
         # default delimiter is ' ', it might need to be changed
-        dir_list = np.loadtxt(file_path, dtype=str, delimiter=delimiter)
+        dir_list = np.loadtxt(str(file_path), dtype=str, delimiter=delimiter)
     return dir_list
 
 
@@ -245,6 +246,9 @@ def nifti_overlap_images(input_images, filter_pref=''):
             raise ValueError('Wrong input (must be a file/directory path of a list of paths)')
     if filter_pref:
         input_images = [p for p in input_images if Path(p).name.startswith(filter_pref)]
+    if not input_images:
+        raise ValueError('The image list is empty, either "input_images" is empty or "filter_pref" was not found'
+                         ' in the paths')
     temp_overlap = None
     temp_overlap_data = None
     for img in tqdm(input_images):
@@ -259,7 +263,7 @@ def nifti_overlap_images(input_images, filter_pref=''):
 
 
 def overlaps_subfolders(root_folder, filter_pref=''):
-    for subfolder in root_folder.iterdir():
+    for subfolder in [p for p in Path(root_folder).iterdir()]:
         print(f'Overlap of [{subfolder.name}]')
-        overlap_path = Path(root_folder, 'overlap_' + subfolder.name + 'nii')
+        overlap_path = Path(root_folder, 'overlap_' + subfolder.name + '.nii')
         nib.save(nifti_overlap_images(subfolder, filter_pref), overlap_path)
