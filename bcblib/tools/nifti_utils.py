@@ -263,7 +263,7 @@ def nifti_overlap_images(input_images, filter_pref=''):
 
 
 def overlaps_subfolders(root_folder, filter_pref=''):
-    for subfolder in [p for p in Path(root_folder).iterdir()]:
+    for subfolder in [p for p in Path(root_folder).iterdir() if p.is_dir()]:
         print(f'Overlap of [{subfolder.name}]')
         overlap_path = Path(root_folder, 'overlap_' + subfolder.name + '.nii')
         nib.save(nifti_overlap_images(subfolder, filter_pref), overlap_path)
