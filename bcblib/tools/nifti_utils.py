@@ -239,7 +239,7 @@ def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, rou
 def nifti_overlap_images(input_images, filter_pref=''):
     if not isinstance(input_images, list):
         if Path(input_images).is_file():
-            input_images = file_to_list(input_images)
+            input_images = [str(p) for p in file_to_list(input_images) if is_nifti(p)]
         elif Path(input_images).is_dir():
             input_images = [str(p) for p in Path(input_images).iterdir() if is_nifti(p)]
         else:
@@ -263,7 +263,7 @@ def nifti_overlap_images(input_images, filter_pref=''):
 
 
 def overlaps_subfolders(root_folder, filter_pref=''):
-    for subfolder in [p for p in Path(root_folder).iterdir()]:
+    for subfolder in [p for p in Path(root_folder).iterdir() if p.is_dir()]:
         print(f'Overlap of [{subfolder.name}]')
         overlap_path = Path(root_folder, 'overlap_' + subfolder.name + '.nii')
         nib.save(nifti_overlap_images(subfolder, filter_pref), overlap_path)
