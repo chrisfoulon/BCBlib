@@ -236,12 +236,15 @@ def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, rou
     return distance_dict
 
 
-def nifti_overlap_images(input_images, filter_pref=''):
+def nifti_overlap_images(input_images, filter_pref='', recursive=False):
     if not isinstance(input_images, list):
         if Path(input_images).is_file():
             input_images = [str(p) for p in file_to_list(input_images) if is_nifti(p)]
         elif Path(input_images).is_dir():
-            input_images = [str(p) for p in Path(input_images).iterdir() if is_nifti(p)]
+            if recursive:
+                input_images = [str(p) for p in Path(input_images).rglob('*') if is_nifti(p)]
+            else:
+                input_images = [str(p) for p in Path(input_images).iterdir() if is_nifti(p)]
         else:
             raise ValueError('Wrong input (must be a file/directory path of a list of paths)')
     if filter_pref:
