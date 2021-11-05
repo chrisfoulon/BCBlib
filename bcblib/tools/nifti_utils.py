@@ -250,8 +250,8 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False):
     if filter_pref:
         input_images = [p for p in input_images if Path(p).name.startswith(filter_pref)]
     if not input_images:
-        raise ValueError('The image list is empty, either "input_images" is empty or "filter_pref" was not found'
-                         ' in the paths')
+        print(' The image list is empty')
+        return None
     temp_overlap = None
     temp_overlap_data = None
     for img in tqdm(input_images):
@@ -265,13 +265,16 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False):
     return temp_overlap
 
 
-def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False):
+def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False, output_pref='overlap_'):
     if subfolders_overlap:
         folder_list = [p for p in Path(root_folder).rglob('*') if p.is_dir()]
+        print(len(folder_list))
     else:
         folder_list = [p for p in Path(root_folder).iterdir() if p.is_dir()]
     for subfolder in folder_list:
         print(f'Overlap of [{subfolder.name}]')
         overlap_path = Path(root_folder, subfolder.relative_to(root_folder).parent,
-                            'overlap_' + subfolder.name + '.nii')
-        nib.save(nifti_overlap_images(subfolder, filter_pref, recursive=False), overlap_path)
+                            output_pref + subfolder.name + '.nii')
+        overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=False)
+        if overlap_nifti is not None:
+            nib.save(overlap_nifti, overlap_path)
