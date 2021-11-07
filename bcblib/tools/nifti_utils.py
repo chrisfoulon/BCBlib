@@ -268,7 +268,6 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False):
 def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False, output_pref='overlap_'):
     if subfolders_overlap:
         folder_list = [p for p in Path(root_folder).rglob('*') if p.is_dir()]
-        print(len(folder_list))
     else:
         folder_list = [p for p in Path(root_folder).iterdir() if p.is_dir()]
     for subfolder in folder_list:
