@@ -236,7 +236,7 @@ def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, rou
     return distance_dict
 
 
-def nifti_overlap_images(input_images, filter_pref='', recursive=False):
+def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=False):
     if not isinstance(input_images, list):
         if Path(input_images).is_file():
             input_images = [str(p) for p in file_to_list(input_images) if is_nifti(p)]
@@ -260,7 +260,10 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False):
             temp_overlap = nii
             temp_overlap_data = nii.get_fdata()
         else:
-            temp_overlap_data += nii.get_fdata()
+            if mean:
+                temp_overlap_data = (temp_overlap_data + nii.get_fdata()) / 2
+            else:
+                temp_overlap_data += nii.get_fdata()
     temp_overlap = nib.Nifti1Image(temp_overlap_data, temp_overlap.affine)
     return temp_overlap
 
