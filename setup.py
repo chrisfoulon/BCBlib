@@ -10,12 +10,12 @@ setup(
     name='bcblib',        # This is the name of your PyPI-package.
     version='0.2.11',     # Update the version number for new releases
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
-    keywords='brain neuroimaging',
+    keywords='brain neuroimaging nifti',
     long_description=read('README.rst'),
     zip_safe=True,
     include_package_data=True,
     packages=find_packages(exclude=['__pycache__']),
-    install_requires=['nibabel>=3', 'numpy', 'six', 'scipy', 'nilearn', 'sklearn', 'tqdm'],
+    install_requires=['nibabel>=3', 'numpy', 'six', 'scipy', 'nilearn', 'sklearn', 'tqdm', 'pandas'],
     package_data={
         # If any package contains *.txt or *.rst files, include them:
         "": ["*.txt", "*.rst"],
@@ -27,7 +27,8 @@ setup(
     author_email="hd.chrisfoulon@gmail.com",
     entry_points={
         'console_scripts': ['generate_synth_lesions = bcblib.scripts.generate_synth_lesions:main',
-                            'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main']
+                            'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main',
+                            'randomise_helper = bcblib.tools.randomise_helper:randomise_helper']
         # 'console_scripts': ['dicom_conversion = data_identification.scripts.dicom_conversion:convert']
     },
     project_urls={  # Optional
