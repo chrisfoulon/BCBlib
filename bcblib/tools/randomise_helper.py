@@ -79,6 +79,14 @@ def spreadsheet_to_mat_and_file_list(spreadsheet, columns, output_dir, pref='', 
         filenames_column = df.columns[filenames_column]
     filtered_filenames = df.iloc[filtered_df.index][filenames_column].tolist()
     filtered_filenames = [str(f) for f in filtered_filenames]
+    prepend_str = f'/NumWaves {len(columns)}'
+    prepend_str += f'\n/NumPoints {len(filtered_filenames)}'
+    prepend_str += f'\n/PPheights 1 1'
+    prepend_str += f'\n/Matrix\n'
+    with open(output_path, 'r') as original:
+        data = original.read()
+    with open(output_path, 'w') as modified:
+        modified.write(prepend_str + data)
     np.savetxt(Path(output_dir, pref + '_4D_file_list.csv'), filtered_filenames, delimiter=',', fmt='%s')
     return filtered_filenames
 
@@ -117,13 +125,33 @@ def randomise_helper():
     parser.add_argument('output_dir', type=str, help='Path to the output directory (created if not existing)')
     parser.add_argument('spreadsheet', type=str, help='Path to the spreadsheet')
     parser.add_argument('images', type=str, help='Folder containing the masks or file containing the list of the paths')
-    parser.add_argument('columns', metavar='N', type=str, nargs='+',
+    parser.add_argument('--split_all_var', action="store_true",
+                        help='if selected, split all the columns from the spreadsheet (that are not in the '
+                             'common columns or the filename column) into different experiment folders with the '
+                             'name of the column used as variable of interest')
+    parser.add_argument('-cc', '--common_columns', metavar='N', type=str, nargs='+',
                         help='Names of the columns to be used as co-variables')
     parser.add_argument('-pref', type=str, default='', help='Prefix to the filename of the output files')
     parser.add_argument('-fc', '--filename_col', default=0, help='Columns name/index where to find the filenames')
     parser.add_argument('-no_hdr', action="store_true",
                         help='If the spreadsheet does not a row corresponding to the column names')
     args = parser.parse_args()
-    image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, args.columns, args.output_dir,
-                                                  pref=args.pref, header=0, filenames_column=args.filename_col)
-    filtered_images_to_4d(args.images, image_list, args.output_dir, pref=args.pref)
+    if args.split_all_var:
+        df = import_spreadsheet(args.spreadsheet, header=0)
+        variables_of_interest = [c for c in df.columns if c != args.filename_col and c not in args.common_columns]
+        if isinstance(args.columns, str):
+            if args.columns not in df.columns:
+                try:
+                    args.columns = int(args.columns)
+                except ValueError:
+                    raise ValueError(f'{args.columns} must either be column names or integers')
+            args.columns = [args.columns]
+        for voi in variables_of_interest:
+            image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, [voi] + args.columns,
+                                                          Path(args.output_dir, voi), pref=args.pref, header=0,
+                                                          filenames_column=args.filename_col)
+            filtered_images_to_4d(args.images, image_list, Path(args.output_dir, voi), pref=args.pref)
+    else:
+        image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, args.columns, args.output_dir,
+                                                      pref=args.pref, header=0, filenames_column=args.filename_col)
+        filtered_images_to_4d(args.images, image_list, args.output_dir, pref=args.pref)
