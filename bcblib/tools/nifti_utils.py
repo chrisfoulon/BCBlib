@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import csv
+from typing import Union
 
 from tqdm import tqdm
 import numpy as np
@@ -280,3 +281,23 @@ def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False, o
         overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=False)
         if overlap_nifti is not None:
             nib.save(overlap_nifti, overlap_path)
+
+
+def binarise_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int] = 1):
+    """
+    Binarise the input image by setting everything >= thr to 1 and everything < thr to 0
+    Parameters
+    ----------
+    nii : Union[os.PathLike, nib.Nifti1Image]
+    thr : Union[float, int]
+
+    Returns
+    -------
+    nib.Nifti1Image
+    """
+    hdr = load_nifti(nii)
+    data = hdr.get_fdata()
+    thr_data = np.zeros(data.shape)
+    thr_data[data >= thr] = 1
+    thr_data[data < thr] = 0
+    return nib.Nifti1Image(thr_data, hdr.affine, header=hdr)
