@@ -300,4 +300,4 @@ def binarise_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int
     thr_data = np.zeros(data.shape)
     thr_data[data >= thr] = 1
     thr_data[data < thr] = 0
-    return nib.Nifti1Image(thr_data, hdr.affine, header=hdr)
+    return nib.Nifti1Image(thr_data, hdr.affine)
