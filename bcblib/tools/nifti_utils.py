@@ -283,9 +283,9 @@ def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False, o
             nib.save(overlap_nifti, overlap_path)
 
 
-def binarise_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int] = 1):
+def binarize_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int] = None):
     """
-    Binarise the input image by setting everything >= thr to 1 and everything < thr to 0
+    Binarize the input image by setting everything >= thr to 1 and everything < thr to 0
     Parameters
     ----------
     nii : Union[os.PathLike, nib.Nifti1Image]
@@ -294,10 +294,23 @@ def binarise_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int
     Returns
     -------
     nib.Nifti1Image
+
+    Note:
+    -------
+    Warning: It is assumed that background intensity is smaller than anything else.
     """
     hdr = load_nifti(nii)
     data = hdr.get_fdata()
     thr_data = np.zeros(data.shape)
-    thr_data[data >= thr] = 1
-    thr_data[data < thr] = 0
+    if thr is not None:
+        thr_data[data >= thr] = 1
+        thr_data[data < thr] = 0
+    else:
+        background_intensity = np.min(data)
+        if background_intensity != 1:
+            thr_data[data > background_intensity] = 1
+            thr_data[data == background_intensity] = 0
+        else:
+            thr_data[data == background_intensity] = 0
+            thr_data[data > background_intensity] = 1
     return nib.Nifti1Image(thr_data, hdr.affine)
