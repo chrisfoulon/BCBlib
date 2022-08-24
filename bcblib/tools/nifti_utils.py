@@ -298,9 +298,15 @@ def binarize_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int
     Note:
     -------
     Warning: It is assumed that background intensity is smaller than anything else.
+    Warning 2: if the image only contains one value, it is returned without changed as it is impossible to know
+    whether this is background or foreground
     """
     hdr = load_nifti(nii)
     data = hdr.get_fdata()
+    # The is already binary (or only contain 1 value)
+    unique_val = set(np.unique(data))
+    if len(unique_val) == 1 or unique_val == {0, 1}:
+        return hdr
     thr_data = np.zeros(data.shape)
     if thr is not None:
         thr_data[data >= thr] = 1
