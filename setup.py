@@ -28,7 +28,8 @@ setup(
     entry_points={
         'console_scripts': ['generate_synth_lesions = bcblib.scripts.generate_synth_lesions:main',
                             'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main',
-                            'randomise_helper = bcblib.tools.randomise_helper:randomise_helper']
+                            'randomise_helper = bcblib.tools.randomise_helper:randomise_helper',
+                            'anacom2 = bcblib.anacom2.anacom2:anacom2']
         # 'console_scripts': ['dicom_conversion = data_identification.scripts.dicom_conversion:convert']
     },
     project_urls={  # Optional

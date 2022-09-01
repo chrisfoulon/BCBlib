@@ -5,22 +5,10 @@ import pandas as pd
 import numpy as np
 import nibabel as nib
 from nilearn.image import concat_imgs
+from bcblib.tools.spreadsheet_io_utils import import_spreadsheet
 import argparse
 
 from bcblib.tools.nifti_utils import is_nifti, file_to_list
-
-
-def import_spreadsheet(spreadsheet, header=0):
-    if isinstance(spreadsheet, pd.DataFrame):
-        df = spreadsheet
-    else:
-        if not Path(spreadsheet).is_file():
-            raise ValueError(f'{spreadsheet} is no an existing file path')
-        if spreadsheet.endswith('.csv'):
-            df = pd.read_csv(spreadsheet, header=header)
-        else:
-            df = pd.read_excel(spreadsheet, header=header)
-    return df
 
 
 def spreadsheet_to_mat_and_file_list(spreadsheet, columns, output_dir, pref='', header=0, filenames_column=0):

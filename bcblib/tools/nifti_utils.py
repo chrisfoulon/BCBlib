@@ -320,3 +320,43 @@ def binarize_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int
             thr_data[data == background_intensity] = 0
             thr_data[data > background_intensity] = 1
     return nib.Nifti1Image(thr_data, hdr.affine)
+
+
+def reorient_image(img, orientation):
+    # TODO
+    img = nib.load(img)
+    ornt = np.array([[0, 1],
+                     [1, -1],
+                     [2, 1]])
+    img = nib.load(img)
+    img = img.as_reoriented(ornt)
+    return img
+
+
+def laterality_ratio(image):
+    """
+    Computes the ratio of volume
+    Parameters
+    ----------
+    image
+
+    Returns
+    -------
+
+    """
+    hdr = load_nifti(image)
+    ori = nib.aff2axcodes(hdr.affine)
+    data = hdr.get_fdata()
+    mid_x = int(data.shape[0] / 2)
+    # So, if the lesioned voxels have x <= mid_x they are on the RIGHT (in LAS orientation)
+    coord = np.where(data)
+    if ((ori[0] == 'L' and ori[1] == 'A') or (ori[0] == 'R' and ori[1] == 'P')) and ori[2] == 'S':
+        right_les = len(coord[0][coord[0] <= mid_x])
+        left_les = len(coord[0][coord[0] > mid_x])
+    else:
+        right_les = len(coord[0][coord[0] > mid_x])
+        left_les = len(coord[0][coord[0] <= mid_x])
+    total_les_vol = len(coord[0])
+    right_ratio = right_les / total_les_vol
+    left_ratio = left_les / total_les_vol
+    return left_ratio - right_ratio
