@@ -21,14 +21,29 @@ We could add a colour scheme for multi states CA where the colour depends on the
 
 
 class Cell:
-    def __init__(self, state=False):
-        self.state = state
+    def __init__(self, state=0):
+        self.state = 0
+        self.next_state = 0
+        self.spawn_time = -1
+        self.set_next_state(state, it_time=0)
+        self.update_state()
 
     def get_state(self):
         return self.state
 
-    def set_state(self, new_state):
-        self.state = new_state
+    def get_spawn(self):
+        return self.spawn_time
+
+    def set_next_state(self, new_state, it_time):
+        self.next_state = new_state
+        # So, if new_state is True or > 0, but other types might have weird interactions
+        if new_state and self.spawn_time == -1:
+            self.spawn_time = it_time
+        if not new_state:
+            self.spawn_time = -1
+
+    def update_state(self):
+        self.state = self.next_state
 
 
 def coord_in_array(coord, array):
@@ -36,7 +51,7 @@ def coord_in_array(coord, array):
         raise ValueError('Coord must have the same dimension as array.shape')
     in_arr = True
     for i, c in enumerate(coord):
-        if not 0 <= c <= array.shape[i]:
+        if not 0 <= c < array.shape[i]:
             in_arr = False
     return in_arr
 
@@ -48,7 +63,9 @@ def get_neighbours(array, cell_coord, out_of_bound_values=0):
         for y in offset_array:
             for z in offset_array:
                 if coord_in_array([x + cell_coord[0], y + cell_coord[1], z + cell_coord[2]], array):
-                    neighbours_arr[x + 1, y + 1, z + 1] = array[cell_coord]
+                    neighbours_arr[x + 1, y + 1, z + 1] = array[(x + cell_coord[0],
+                                                                 y + cell_coord[1],
+                                                                 z + cell_coord[2])].get_state()
                 else:
                     # TODO might be removed for optimisation
                     neighbours_arr[x + 1, y + 1, z + 1] = out_of_bound_values
@@ -57,7 +74,7 @@ def get_neighbours(array, cell_coord, out_of_bound_values=0):
 
 # TODO there could be a bunch of other strategies for the spawn and states
 # e.g. If the spawn condition is on a living cell it could go up a state
-def apply_rule_to_cell(array, cell_coord, rule=(4, 2, 1, 'M'), fading='hp'):
+def apply_rule_to_cell(array, cell_coord, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
     """
     Still from https://softologyblog.wordpress.com/2019/12/28/3d-cellular-automata-3/:
     "Rule 445 is the first rule in the video and shown as 4/4/5/M. This is fairly standard survival/birth CA syntax.
@@ -85,10 +102,7 @@ def apply_rule_to_cell(array, cell_coord, rule=(4, 2, 1, 'M'), fading='hp'):
     array
     rule
     fading
-
-    Returns
-    -------
-
+    it_time
     """
     cell = array[cell_coord]
     neighbours = get_neighbours(array, cell_coord)
@@ -101,21 +115,45 @@ def apply_rule_to_cell(array, cell_coord, rule=(4, 2, 1, 'M'), fading='hp'):
             neighbourhood_method = 'von_neumann'
     if neighbourhood_method == 'moore':
         cell_state = cell.get_state()
-        neighbours_count = np.sum(neighbours)
+        neighbours_count = np.count_nonzero(neighbours)
         new_state = cell_state
-        # The conditions could be merged but there might be more to add in the future
-        if cell_state > 0:
+        if cell_state:
+            # Here the cell either survives or fades/dies
             if neighbours_count < survive_rule or fading == 'final_countdown':
                 new_state -= 1
         else:
+            # Here the cell can spawn
             if neighbours_count >= spawn_rule:
-                new_state -= 1
+                new_state = num_states - 1
     else:
         # TODO
-        new_state = 0
-    cell.set_state(new_state)
+        new_state = cell.get_state()
+    cell.set_next_state(new_state, it_time)
+    
+
+def evolve_automata(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        acc = 0
+        for c in it:
+            if c.item().get_state():
+                acc += 1
+            apply_rule_to_cell(cell_array, it.multi_index, it_time, rule=rule, fading=fading)
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        for c in it:
+            c.item().update_state()
 
 
 def cell_array_to_state_array(cell_array):
-    state_array = np.zeros_like(cell_array)
+    state_array = np.zeros_like(cell_array, dtype=int)
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        for c in it:
+            state_array[it.multi_index] = c.item().get_state()
+    return state_array
 
+
+def create_cell_array(shape, init_state=0):
+    cell_array = np.empty(shape, dtype=object)
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index'], op_flags=['readwrite']) as it:
+        for c in it:
+            c[...] = Cell(init_state)
+    return cell_array
