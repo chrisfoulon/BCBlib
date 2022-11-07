@@ -44,16 +44,24 @@ def dilate_mask(array, connectivity, dimensions=3):
     return binary_dilation(array, binary_structure).astype(array.dtype)
 
 
-def mask_array(array, mask):
-    array[mask == 0] = 0
-    return array
+def mask_in_array(array, mask):
+    out_array = np.copy(array)
+    out_array[mask == 0] = 0
+    return out_array
 
 
-def get_masked_img_min_max_range(mask_arr):
-    return np.max(mask_arr) - np.min(mask_arr)
+def mask_out_array(array, mask):
+    out_array = np.copy(array)
+    out_array[mask == 1] = 0
+    return out_array
 
 
-def get_roi_intensity_range(image, mask, dilation_connectivity=2, binarise_thr=0.5):
+def get_outer_inner_intensity_ratio(inner_edge_mask, outer_edge_mask):
+    mean_outer = np.mean(outer_edge_mask)
+    return (np.mean(inner_edge_mask) - mean_outer) / mean_outer
+
+
+def get_roi_outer_inner_ratio(image, mask, dilation_connectivity=2, binarise_thr=0.5):
     """
     Calculate the perimeter of the mask, dilate it and then extracts the intensity of the input image withing this mask
     to compute the min-max range
@@ -72,7 +80,14 @@ def get_roi_intensity_range(image, mask, dilation_connectivity=2, binarise_thr=0
     image_data = image_hdr.get_fdata()
     mask_hdr = load_nifti(mask)
     mask_data = mask_hdr.get_fdata()
-    perim_data = get_mask_perimeter(mask_data, binarise_thr=binarise_thr)
-    perim_data = dilate_mask(perim_data, dilation_connectivity)
-    masked_image_data = mask_array(image_data, perim_data)
-    return get_masked_img_min_max_range(masked_image_data), nib.Nifti1Image(masked_image_data, image_hdr.affine)
+    inner_edge_data = get_mask_perimeter(mask_data, binarise_thr=binarise_thr)
+    if np.count_nonzero(inner_edge_data) == 0:
+        inner_edge_data = mask_data
+    inner_edge_masked_image_data = mask_in_array(image_data, inner_edge_data)
+    dilated_perim_data = dilate_mask(inner_edge_data, dilation_connectivity)
+    outer_edge_data = mask_out_array(dilated_perim_data, mask_data)
+    outer_edge_masked_image_data = mask_in_array(image_data, outer_edge_data)
+    return get_outer_inner_intensity_ratio(
+        inner_edge_masked_image_data,
+        outer_edge_masked_image_data), nib.Nifti1Image(
+        inner_edge_masked_image_data, image_hdr.affine), nib.Nifti1Image(outer_edge_masked_image_data, image_hdr.affine)
