@@ -132,16 +132,6 @@ def reorient_nifti_list(nifti_list, output_dir=None, save_in_place=False, discar
     return reoriented_list, failed_list
 
 
-# for img in orientation_list:
-#     ...:     if nifti_utils.get_nifti_orientation(img) != ('R', 'A', 'S'):
-#     ...:         print(img)
-#     ...:         print(nib.load(img).affine)
-#     ...:         print(nib.as_closest_canonical(nib.load(img)).affine)
-#     ...:         print(nib.load(img).affine == nib.as_closest_canonical(nib.load(img)).affine)
-#     ...:         print(orientation_list[img])
-#     ...:         print('######################### END IMAGE ##############################')
-
-
 def resave_nifti(nifti, output=None):
     output_file = None
     output_dir = None

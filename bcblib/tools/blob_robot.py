@@ -239,5 +239,5 @@ def create_cell_array(shape, init_state=0):
             c[...] = Cell(init_state)
     return cell_array
 
-# TODO Maybe using the (ONE) state array to check the neighbourhood would be more efficient
-# instead of building the neighbourhood from the cells
+# TODO Make a 2D slice growth mode where the 3D automata would simply be the different states of a 2D CA evolution
+# TODO Have a sliced growth (neighbourhood only on the slice) starting from a couple of random cells on each slice
