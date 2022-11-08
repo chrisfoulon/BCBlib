@@ -1,4 +1,5 @@
 from pathlib import Path
+from functools import partial
 
 import numpy as np
 from scipy import ndimage
@@ -51,6 +52,7 @@ class Cell:
         self.state = self.get_next_state()
 
 
+# TODO make a helper function module in the bcblib for generic functions like this one.
 def coord_in_array(coord, array):
     if len(coord) != len(array.shape):
         raise ValueError('Coord must have the same dimension as array.shape')
@@ -61,6 +63,40 @@ def coord_in_array(coord, array):
     return in_arr
 
 
+def create_shapes_in_arr(cell_array, coords=1, structure=None, connectivity=None, dimensions=3, value=1, it_time=0):
+    """
+    Parameters
+    ----------
+    cell_array
+    coords
+    structure
+    connectivity
+    dimensions
+    value
+    it_time
+
+    Returns
+    -------
+
+    """
+    if structure is None and connectivity is None:
+        raise ValueError('Either a structure or a connectivity must be provided')
+    if connectivity is not None:
+        structure = ndimage.generate_binary_structure(dimensions, connectivity)
+    array = np.zeros_like(cell_array).astype(int)
+    # TODO add the other 'coords' options (one coord or a list of coordinates)
+    # Then we want coords structures randomly located in the array
+    if isinstance(coords, int):
+        arr_coords = np.argwhere(array == 0)
+        for i in range(coords):
+            array[tuple(arr_coords[np.random.randint(len(arr_coords))])] = 1
+        dilated_array = ndimage.binary_dilation(array, structure=structure).astype(array.dtype)
+        for c in np.argwhere(dilated_array):
+            cell_array[tuple(c)].set_next_state(value, it_time)
+            cell_array[tuple(c)].update_state()
+
+
+# Deprecated (slow AF)
 def get_neighbours(array, cell_coord, out_of_bound_values=0):
     neighbours_arr = np.zeros((3,) * 3)
     offset_array = [-1, 0, 1]
@@ -87,7 +123,7 @@ def create_neighbours_array(state_array, footprint=None, neighbourhood='moore', 
 
 # TODO there could be a bunch of other strategies for the spawn and states
 # e.g. If the spawn condition is on a living cell it could go up a state
-def apply_rule_to_cell(array, cell_coord, it_time, rule=(4, 2, 1, 'M'), neighbour_array=None):
+def apply_rule_to_cell(array, cell_coord, neighbour_array, it_time, rule=(4, 2, 1, 'M')):
     """
     Still from https://softologyblog.wordpress.com/2019/12/28/3d-cellular-automata-3/:
     "Rule 445 is the first rule in the video and shown as 4/4/5/M. This is fairly standard survival/birth CA syntax.
@@ -111,6 +147,7 @@ def apply_rule_to_cell(array, cell_coord, it_time, rule=(4, 2, 1, 'M'), neighbou
 
     Parameters
     ----------
+    neighbour_array
     cell_coord
     array
     rule :
@@ -119,13 +156,7 @@ def apply_rule_to_cell(array, cell_coord, it_time, rule=(4, 2, 1, 'M'), neighbou
     it_time
     """
     cell = array[cell_coord]
-    # TODO 99% of the running time is taken up by this function
-    neighbours = None
-    neighbours_count = 0
-    if neighbour_array is None:
-        neighbours = get_neighbours(array, cell_coord)
-    else:
-        neighbours_count = neighbour_array[cell_coord]
+    neighbours_count = neighbour_array[cell_coord]
     survive_rule = rule[0]
     spawn_rule = rule[1]
     num_states = rule[2]
@@ -135,8 +166,6 @@ def apply_rule_to_cell(array, cell_coord, it_time, rule=(4, 2, 1, 'M'), neighbou
             neighbourhood_method = 'von_neumann'
     if neighbourhood_method == 'moore':
         cell_state = cell.get_state()
-        if neighbours is not None:
-            neighbours_count = np.count_nonzero(neighbours)
         new_state = cell_state
         # TODO Add overpopulation cell death
         if cell_state:
@@ -179,22 +208,14 @@ def apply_rule_to_cell(array, cell_coord, it_time, rule=(4, 2, 1, 'M'), neighbou
     cell.set_next_state(new_state, it_time)
     
 
-def evolve_automaton(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp', test_mode='cell_array'):
-    if test_mode == 'cell_array':
-        with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
-            acc = 0
-            for c in it:
-                if c.item().get_state():
-                    acc += 1
-                apply_rule_to_cell(cell_array, it.multi_index, it_time, rule=rule)
-    else:
-        neighbour_array = create_neighbours_array(cell_array_to_state_array(cell_array))
-        with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
-            acc = 0
-            for c in it:
-                if c.item().get_state():
-                    acc += 1
-                apply_rule_to_cell(cell_array, it.multi_index, it_time, rule=rule, neighbour_array=neighbour_array)
+def evolve_automaton(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
+    neighbour_array = create_neighbours_array(cell_array_to_state_array(cell_array))
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        acc = 0
+        for c in it:
+            if c.item().get_state():
+                acc += 1
+            apply_rule_to_cell(cell_array, it.multi_index, neighbour_array, it_time, rule=rule)
     with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
         for c in it:
             c.item().update_state()
