@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import shutil
 
 import pandas as pd
 import numpy as np
@@ -123,6 +124,8 @@ def randomise_helper():
     parser.add_argument('-fc', '--filename_col', default=0, help='Columns name/index where to find the filenames')
     parser.add_argument('-no_hdr', action="store_true",
                         help='If the spreadsheet does not a row corresponding to the column names')
+    parser.add_argument('-con', '--copy_contrast', default=0, help='If provided, the file will be copied in every '
+                                                                   'output subfolders')
     args = parser.parse_args()
     if args.split_all_var:
         df = import_spreadsheet(args.spreadsheet, header=0)
@@ -131,7 +134,11 @@ def randomise_helper():
             image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, [voi] + args.common_columns,
                                                           Path(args.output_dir, voi), pref=args.pref, header=0,
                                                           filenames_column=args.filename_col)
+            if len(image_list) == 0:
+                raise ValueError(f'No patient could be associated with values in {voi}')
             filtered_images_to_4d(args.images, image_list, Path(args.output_dir, voi), pref=args.pref)
+            if args.copy_contrast is not None:
+                shutil.copy(args.copy_contrast, Path(args.output_dir, voi))
     else:
         image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, args.common_columns, args.output_dir,
                                                       pref=args.pref, header=0, filenames_column=args.filename_col)
