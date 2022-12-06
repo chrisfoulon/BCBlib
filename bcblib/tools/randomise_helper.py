@@ -57,7 +57,7 @@ def spreadsheet_to_mat_and_file_list(spreadsheet, columns, output_dir, pref='', 
     filtered_df = df.iloc[df[columns][pd.notnull(df[columns])].dropna().index][columns]
     np_mat = filtered_df.values
     os.makedirs(output_dir, exist_ok=True)
-    output_path = Path(output_dir, pref + '_design.mat')
+    output_path = Path(output_dir, pref + 'design.mat')
     np.savetxt(output_path, np_mat, delimiter=' ', fmt='%s')
 
     if filenames_column not in df.columns:
@@ -76,7 +76,7 @@ def spreadsheet_to_mat_and_file_list(spreadsheet, columns, output_dir, pref='', 
         data = original.read()
     with open(output_path, 'w') as modified:
         modified.write(prepend_str + data)
-    np.savetxt(Path(output_dir, pref + '_4D_file_list.csv'), filtered_filenames, delimiter=',', fmt='%s')
+    np.savetxt(Path(output_dir, pref + '4D_file_list.csv'), filtered_filenames, delimiter=',', fmt='%s')
     return filtered_filenames
 
 
@@ -104,7 +104,7 @@ def filtered_images_to_4d(images, filtered_filenames, output_dir, pref=''):
     nii_list = [nib.load(f) for f in filtered_file_list]
     voxel_dtype = nii_list[0].get_data_dtype()
     new_4d_images = concat_imgs(nii_list, dtype=voxel_dtype)
-    output_4d = Path(output_dir, pref + '_filtered_4D.nii.gz')
+    output_4d = Path(output_dir, pref + 'filtered_4D.nii.gz')
     nib.save(new_4d_images, output_4d)
 
 
@@ -124,12 +124,15 @@ def randomise_helper():
     parser.add_argument('-fc', '--filename_col', default=0, help='Columns name/index where to find the filenames')
     parser.add_argument('-no_hdr', action="store_true",
                         help='If the spreadsheet does not a row corresponding to the column names')
-    parser.add_argument('-con', '--copy_contrast', default=0, help='If provided, the file will be copied in every '
-                                                                   'output subfolders')
+    parser.add_argument('-con', '--copy_contrast', help='If provided, the file will be copied in every '
+                                                        'output subfolders')
     args = parser.parse_args()
+    if not args.pref.endswith('_'):
+        args.pref = args.pref + '_'
     if args.split_all_var:
         df = import_spreadsheet(args.spreadsheet, header=0)
         variables_of_interest = [c for c in df.columns if c != args.filename_col and c not in args.common_columns]
+        # voi for variable of interest
         for voi in variables_of_interest:
             image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, [voi] + args.common_columns,
                                                           Path(args.output_dir, voi), pref=args.pref, header=0,
@@ -138,7 +141,7 @@ def randomise_helper():
                 raise ValueError(f'No patient could be associated with values in {voi}')
             filtered_images_to_4d(args.images, image_list, Path(args.output_dir, voi), pref=args.pref)
             if args.copy_contrast is not None:
-                shutil.copy(args.copy_contrast, Path(args.output_dir, voi))
+                shutil.copy(args.copy_contrast, Path(args.output_dir, voi, args.pref + Path(args.copy_contrast).name))
     else:
         image_list = spreadsheet_to_mat_and_file_list(args.spreadsheet, args.common_columns, args.output_dir,
                                                       pref=args.pref, header=0, filenames_column=args.filename_col)
