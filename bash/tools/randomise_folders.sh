@@ -7,7 +7,7 @@
 
 # randomise -i toto_filtered_4D.nii.gz -o toto_filtered_4D.nii.gz -d toto_design.mat -t design.con -T -n 10000
 echo "Starting $1"
-for d in "$(realpath "$1")"/*/;
+for d in "$1"/*/;
 do
   cd "$d" || echo "Could not change directory in $d"
 #  test if the files exist
