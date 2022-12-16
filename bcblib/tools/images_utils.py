@@ -63,18 +63,28 @@ def get_outer_inner_intensity_ratio(inner_edge_mask, outer_edge_mask):
 
 def get_roi_outer_inner_ratio(image, mask, dilation_connectivity=2, binarise_thr=0.5):
     """
-    Calculate the perimeter of the mask, dilate it and then extracts the intensity of the input image withing this mask
-    to compute the min-max range
-    Parameters
-    ----------
-    image
-    mask
-    dilation_connectivity
-    binarise_thr
+        Calculate the perimeter of the mask, dilate it and then extracts the intensity of the input image within this mask
+        to compute the outer-inner intensity ratio.
 
-    Returns
-    -------
+        Parameters
+        ----------
+        image: str
+            Path to the input image in Nifti format.
+        mask: str
+            Path to the mask image in Nifti format.
+        dilation_connectivity: int, optional
+            Dilation connectivity of the mask (default is 2).
+        binarise_thr: float, optional
+            Threshold for binarizing the mask (default is 0.5).
 
+        Returns
+        -------
+        ratio: float
+            The outer-inner intensity ratio.
+        inner_image: Nifti1Image
+            The image data within the inner perimeter of the mask.
+        outer_image: Nifti1Image
+            The image data within the outer perimeter of the mask.
     """
     image_hdr = load_nifti(image)
     image_data = image_hdr.get_fdata()

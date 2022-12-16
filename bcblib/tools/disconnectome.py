@@ -69,3 +69,86 @@ nib.save(out_nii, args.out_img)
 #
 # nib.save(nib.Nifti1Image(streamline_count.astype(np.int16), transformation),
 #          args.out_img)
+
+import nibabel as nib
+from dipy.io.streamline import load_trk
+# from dipy.tracking.utils import partial_tractogram
+
+# def compute_partial_tractography(tractography_path, nifti_mask_path):
+#     # load the tractography file
+#     tractography, hdr = load_trk(tractography_path, lazy_load=True)
+#
+#     # load the NIFTI mask
+#     nifti_mask_img = nib.load(nifti_mask_path)
+#     nifti_mask_data = nifti_mask_img.get_data()
+#
+#     # compute the partial tractography
+#     partial_tract = partial_tractogram(tractography, nifti_mask_data)
+#
+#     return partial_tract
+
+# test the function
+# partial_tract = compute_partial_tractography('path/to/tractography.trk', 'path/to/nifti/mask.nii.gz')
+
+
+def apply_mask(tracts, mask, min_len=0, max_len=np.inf):
+    """ Applies a binary mask to a set of tracts.
+
+    Parameters
+    ----------
+    tracts : sequence of ndarrays or generator
+        The tracts to be masked.
+    mask : ndarray
+        A binary mask with the same shape as the tracts.
+    min_len : int, optional
+        The minimum length of tracts to keep.
+    max_len : int, optional
+        The maximum length of tracts to keep.
+
+    Returns
+    -------
+    generator
+        A generator object containing the masked tracts.
+    """
+    mask = np.asarray(mask)
+    for tract in tracts:
+        # Compute the length of the tract
+        tract_len = len(tract)
+        # Skip the tract if it is outside the length range
+        if tract_len < min_len or tract_len > max_len:
+            continue
+        # Apply the mask to the tract
+        masked_tract = tract[mask[tuple(tract.T)]]
+        # Return the masked tract
+        yield masked_tract
+
+
+# import nibabel as nib
+# from dipy.tracking.utils import apply_mask
+
+# def partial_tractography(tract_path, mask_path):
+#     # Load the tractography file
+#     tracts = nib.streamlines.load(tract_path)
+#     # Load the NIFTI mask
+#     mask_img = nib.load(mask_path)
+#     # Apply the mask to the tractography data
+#     tracts = apply_mask(tracts, mask_img.get_data())
+#     # Return the partial tractography
+#     return tracts
+
+
+def partial_tractography(tract_path, mask_path, output_path):
+    # Load the tractography file
+    tracts = nib.streamlines.load(tract_path)
+    # Load the NIFTI mask
+    mask_img = nib.load(mask_path)
+    # Apply the mask to the tractography data
+    tracts = apply_mask(tracts, mask_img.get_data())
+    # Create a NIFTI image with the same shape as the mask
+    output_img = nib.Nifti1Image(mask_img.shape, mask_img.affine)
+    # Set the voxels in the output image to 1 where there are tracts
+    for tract in tracts:
+        output_img.get_data()[tuple(tract.T)] = 1
+    # Save the output image
+    nib.save(output_img, output_path)
+

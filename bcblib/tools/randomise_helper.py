@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import shutil
+from typing import Union, List
 
 import pandas as pd
 import numpy as np
@@ -12,31 +13,43 @@ import argparse
 from bcblib.tools.nifti_utils import is_nifti, file_to_list
 
 
-def spreadsheet_to_mat_and_file_list(spreadsheet, columns, output_dir, pref='', header=0, filenames_column=0):
-    """
+def spreadsheet_to_mat_and_file_list(spreadsheet: Union[str, pd.DataFrame],
+                                     columns: Union[str, int, List[str], List[int]],
+                                     output_dir: str, pref: str = '', header: int = 0, filenames_column: Union[str, int] = 0):
+    """Convert a spreadsheet to a .mat file and a .csv file with the list of filenames.
+
+    The .mat file contains the selected columns from the input spreadsheet, and the .csv file contains the
+    filenames for each row in the .mat file. The .mat file is formatted for use as an input for the FSL randomise
+    tool.
 
     Parameters
     ----------
-    spreadsheet : str or pathlike or pandas.DataFrame
-        DataFrame or path to the spreadsheet containing the scores to input in randomise design.mat
-    columns : Union[str, int, list[str], list[int]]
-        Columns names / indices(if no header)
-    output_dir : str or pathlike
-        Output directory (created if not existing)
-    pref : str
-        Optional. Prefix added before the filename of the output
-    header : [default 0]
-        header option for pandas.read_csv or pandas.read_excel
-    filenames_column : str or int
-        columns name or index where to find the filename of each row
+    spreadsheet: Union[str, pandas.DataFrame]
+        DataFrame or path to the spreadsheet containing the data to input in the .mat file.
+    columns: Union[str, int, List[str], List[int]]
+        Columns names or indices (if no header) to include in the .mat file.
+    output_dir: str
+        Output directory (created if not existing) for the .mat and .csv files.
+    pref: str, optional
+        Prefix to add before the filenames of the output files (default is '').
+    header: int, optional
+        Header option for pandas.read_csv or pandas.read_excel (default is 0).
+    filenames_column: Union[str, int], optional
+        Column name or index where to find the filenames for each row in the input spreadsheet (default is 0).
 
     Returns
     -------
+    filtered_filenames: List[str]
+        List of filenames for each row in the .mat file.
 
-    example:
+    Examples
+    --------
+    # Import data from an Excel spreadsheet
     df = pd.read_excel('/home/user/Downloads/spreadsheet.xlsx', header=0)
-    spreadsheet_to_mat(df, ['SubID', 'IDP'], '/home/user/Downloads/')
+    # Convert the data to a .mat file and a .csv file
+    spreadsheet_to_mat_and_file_list(df, ['SubID', 'IDP'], '/home/user/Downloads/')
     """
+
     df = import_spreadsheet(spreadsheet, header)
     if isinstance(columns, str):
         if columns not in df.columns:
