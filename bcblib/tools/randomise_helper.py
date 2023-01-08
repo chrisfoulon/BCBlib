@@ -15,7 +15,8 @@ from bcblib.tools.nifti_utils import is_nifti, file_to_list
 
 def spreadsheet_to_mat_and_file_list(spreadsheet: Union[str, pd.DataFrame],
                                      columns: Union[str, int, List[str], List[int]],
-                                     output_dir: str, pref: str = '', header: int = 0, filenames_column: Union[str, int] = 0):
+                                     output_dir: Union[str, Path], pref: str = '', header: int = 0,
+                                     filenames_column: Union[str, int] = 0):
     """Convert a spreadsheet to a .mat file and a .csv file with the list of filenames.
 
     The .mat file contains the selected columns from the input spreadsheet, and the .csv file contains the
@@ -142,6 +143,8 @@ def randomise_helper():
     args = parser.parse_args()
     if not args.pref.endswith('_'):
         args.pref = args.pref + '_'
+    if args.common_columns is None:
+        args.common_columns = []
     if args.split_all_var:
         df = import_spreadsheet(args.spreadsheet, header=0)
         variables_of_interest = [c for c in df.columns if c != args.filename_col and c not in args.common_columns]

@@ -101,3 +101,59 @@ def get_roi_outer_inner_ratio(image, mask, dilation_connectivity=2, binarise_thr
         inner_edge_masked_image_data,
         outer_edge_masked_image_data), nib.Nifti1Image(
         inner_edge_masked_image_data, image_hdr.affine), nib.Nifti1Image(outer_edge_masked_image_data, image_hdr.affine)
+
+import numpy as np
+def compute_disconnectome(img):
+    return img
+
+"""
+Write a python function. For the paths, use the pathlib. The function takes a path and a number as input. 
+First it tests whether the file exists, if not, test if it's a folder and replace path by folder + 'my_image.nii'. 
+Then, it calls another function called 'compute_disconnectome' of which result is store into a variable my_disco. 
+My_disco is a nifti image. Get the data of my_disco and multiply it by the number from the input. 
+Return a new nifti image with the result of the multiplication as data.
+"""
+
+import pathlib
+from nibabel import load, save
+
+def multiply_disconnectome(path: str, number: float):
+    # Create a Path object from the input path
+    p = pathlib.Path(path)
+
+    # Check if the path points to a file
+    if p.is_file():
+        # Load the file as a nifti image
+        my_disco = load(p)
+    # If the path is a directory, assume you want to use 'my_image.nii' in that directory
+    elif p.is_dir():
+        # Construct the path to the file 'my_image.nii' in the directory
+        p = p / 'my_image.nii'
+        # Load the file as a nifti image
+        my_disco = load(p)
+    else:
+        # If the path is not a file or directory, raise an error
+        raise ValueError(f"{path} is not a valid file or directory path")
+
+    # Call the compute_disconnectome function and store the result in my_disco
+    my_disco = compute_disconnectome(my_disco)
+
+    # Get the data of my_disco
+    data = my_disco.get_fdata()
+
+    # Multiply the data by the input number
+    result = data * number
+
+    # Create a new nifti image with the result data
+    result_image = my_disco.__class__(result, my_disco.affine, my_disco.header)
+
+    # Return the new nifti image
+    return result_image
+
+
+mask = '/data/Chris/lesionsFormated/patient01.nii.gz'
+print('Values in input mask: ')
+print(np.unique(nib.load(mask).get_fdata()))
+res_img = multiply_disconnectome(mask, 42)
+print('Values in output mask: ')
+print(np.unique(res_img.get_fdata()))
