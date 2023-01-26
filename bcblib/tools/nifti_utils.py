@@ -259,15 +259,19 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=Fal
     return temp_overlap
 
 
-def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False, output_pref='overlap_'):
+def overlaps_subfolders(root_folder, filter_pref='', subfolders_overlap=False, output_pref='overlap_',
+                        save_in_root=True):
     if subfolders_overlap:
         folder_list = [p for p in Path(root_folder).rglob('*') if p.is_dir()]
     else:
         folder_list = [p for p in Path(root_folder).iterdir() if p.is_dir()]
     for subfolder in folder_list:
         print(f'Overlap of [{subfolder.name}]')
-        overlap_path = Path(root_folder, subfolder.relative_to(root_folder).parent,
-                            output_pref + subfolder.name + '.nii')
+        if save_in_root:
+            overlap_path = Path(root_folder, output_pref + subfolder.name + '.nii.gz')
+        else:
+            overlap_path = Path(root_folder, subfolder.relative_to(root_folder).parent,
+                                output_pref + subfolder.name + '.nii.gz')
         overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=False)
         if overlap_nifti is not None:
             nib.save(overlap_nifti, overlap_path)
