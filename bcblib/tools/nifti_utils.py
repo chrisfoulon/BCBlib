@@ -261,7 +261,7 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=Fal
 
 def overlaps_subfolders(root_folder, filter_pref='', subfolders_recursive=True,
                         subfolders_overlap=False, output_pref='overlap_',
-                        save_in_root=True):
+                        save_in_root=True, mean=False):
     if subfolders_recursive and subfolders_overlap:
         raise ValueError('subfolders_recursive and subfolders_overlap cannot be True together')
     if subfolders_overlap:
@@ -275,7 +275,7 @@ def overlaps_subfolders(root_folder, filter_pref='', subfolders_recursive=True,
         else:
             overlap_path = Path(root_folder, subfolder.relative_to(root_folder).parent,
                                 output_pref + subfolder.name + '.nii.gz')
-        overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive)
+        overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive, mean=mean)
         if overlap_nifti is not None:
             nib.save(overlap_nifti, overlap_path)
 
