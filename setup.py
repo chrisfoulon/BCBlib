@@ -10,7 +10,7 @@ setup(
     name='bcblib',        # This is the name of your PyPI-package.
     version='0.3.0',     # Update the version number for new releases
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
-    keywords='brain neuroimaging nifti',
+    keywords='brain neuroimaging nifti cellular-automata bcbtoolkit bcblab',
     long_description=read('README.rst'),
     zip_safe=True,
     include_package_data=True,
