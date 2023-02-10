@@ -207,7 +207,7 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
     except Exception as e:
         print(f'Exception caught when trying to save {output_path}')
         raise e
-    for counter, k in enumerate(seg_dict):
+    for counter, k in enumerate([k for k in seg_dict if k not in output_dict]):
         pid = seg_dict[k]['PatientID']
         b1000 = Path(images_root, seg_dict[k]['b1000'])
         label = None
