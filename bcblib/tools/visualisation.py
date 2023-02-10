@@ -47,14 +47,18 @@ def mricron_display(path: Union[str, bytes, os.PathLike],
     return process
 
 
-def display_img(img, over1=None, over2=None, display='mricron'):
+def display_img(img, over1=None, over2=None, display='mricron', coord=None):
     data = nib.load(img).get_fdata()
     if display == 'mricron':
         img_opt = ['-x', '-c', '-0',
                    '-l', '{:.4f}'.format(np.min(data)), '-h', '{:.4f}'.format(np.max(data)), '-b', '60']
     elif display == 'fsleyes':
         # img_opt = ['-cm', 'red', '-a', '40', ]
-        fsleyes_command = ['fsleyes', str(img)]
+        if coord is not None:
+            coord_str = '-vl ' + ' '.join([str(c) for c in coord])
+            fsleyes_command = ['fsleyes', coord_str, str(img)]
+        else:
+            fsleyes_command = ['fsleyes', str(img)]
         if over1 is not None:
             fsleyes_command += [str(over1), '-cm', 'red', '-a', '40']
         if over2 is not None:
@@ -161,8 +165,8 @@ def loop_display_sort_folder(folder: Union[str, bytes, os.PathLike],
 
 
 def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label_dict_path=None, spreadsheets=None,
-                                    matching_columns=None, info_columns=None, display='fsleyes',
-                                    zfill_matching_col=True):
+                                    matching_columns=None, info_columns=None, highlight_terms_list=None,
+                                    display='fsleyes', zfill_matching_col=True):
     if not isinstance(seg_dict, dict):
         seg_dict = open_json(seg_dict)
     if not Path(output_path).parent.is_dir():
@@ -223,6 +227,10 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                     matched_entries = spreadsheet[spreadsheet[matching_columns[ind]] == pid][info_columns[ind]]
                     print(f'Spreadsheet number {ind} ###############')
                     for entry_ind, entry in enumerate(matched_entries):
+                        if highlight_terms_list is not None:
+                            for term in highlight_terms_list:
+                                # TODO
+                                break
                         print(f'###### {entry_ind}: {entry}')
             pprint(label_dict)
             print('Select a label from the list above using either the number or the label itself or ')
@@ -242,14 +250,19 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
             else:
                 if resp in label_dict.values():
                     output_dict[k] = resp
+                    save_json(output_path, output_dict)
                 elif resp in label_dict.keys():
                     output_dict[k] = label_dict[resp]
+                    save_json(output_path, output_dict)
                 else:
-                    yn = input(f'{resp} is neither a label nor a label code. Do you want to add a new label [Y/n]')
+                    yn = input(f'{resp} is neither a label nor a label code.'
+                               f'\nDo you want to add this as a new label [Y/n]')
                     if yn.lower() == 'n':
                         print('Alright! Showing the image again!')
                         show_image = True
                     else:
+                        output_dict[k] = resp
+                        save_json(output_path, output_dict)
                         label_dict.update({str(len(label_dict)): resp})
                         save_json(label_dict_path, label_dict)
     save_json(output_path, output_dict)
