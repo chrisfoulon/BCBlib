@@ -200,7 +200,7 @@ def resave_nifti_list(nifti_list, output_dir=None, save_in_place=False, discard_
 
 def get_centre_of_mass(nifti, round_coord=False):
     nii = load_nifti(nifti)
-    if not np.array(nii.get_fdata()).any():
+    if not nii.get_fdata().any():
         return tuple(np.zeros(len(nii.shape)))
     if round_coord:
         return np.round(center_of_mass(np.nan_to_num(np.abs(nii.get_fdata()))))

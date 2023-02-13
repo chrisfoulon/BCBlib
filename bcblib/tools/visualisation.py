@@ -161,8 +161,9 @@ def loop_display_sort_folder(folder: Union[str, bytes, os.PathLike],
 
 
 def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label_dict_path=None, spreadsheets=None,
-                                    matching_columns=None, info_columns=None, display='fsleyes',
+                                    matching_columns=None, info_columns=None, display='fsleyes', seg_coord=False,
                                     zfill_matching_col=True):
+    pd.set_option('display.max_colwidth', None)
     if not isinstance(seg_dict, dict):
         seg_dict = open_json(seg_dict)
     if not Path(output_path).parent.is_dir():
@@ -217,6 +218,10 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
         print(f'############### IMAGE NUMBER {counter}/{len(seg_dict)} #################')
         while show_image or show_report:
             if show_image:
+                if display == 'fsleyes':
+                    if seg is not None and seg_coord:
+                else:
+                    coord = None
                 display_img(b1000, label, seg, display)
             if show_report:
                 for ind, spreadsheet in enumerate(spreadsheets):
