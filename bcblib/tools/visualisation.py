@@ -224,9 +224,9 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
             if show_image:
                 if display == 'fsleyes':
                     if (seg is not None and seg_coord) or label is None:
-                        coord = get_centre_of_mass(seg, round_coord=True)
+                        coord = get_centre_of_mass(seg, round_coord=True).astype(int)
                     else:
-                        coord = get_centre_of_mass(label, round_coord=True)
+                        coord = get_centre_of_mass(label, round_coord=True).astype(int)
                 else:
                     coord = None
                 display_img(b1000, label, seg, display, coord)
