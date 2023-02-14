@@ -65,13 +65,14 @@ def display_img(img, over1=None, over2=None, display='mricron', coord=None):
             fsleyes_command += [str(over2), '-cm', 'green', '-a', '40']
         fsleyes_command = fsleyes_command  # + img_opt
         print('Fsleyes command: "{}"'.format(' '.join(fsleyes_command)))
-        # os.environ["DISPLAY"] = ':1'
+        os.environ["DISPLAY"] = ':1'
         process = subprocess.run(fsleyes_command,
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  universal_newlines=True
                                  )
         if process.stderr != '':
+            print('Error/Warning during fsleyes execution')
             print('exit status:', process.returncode)
             print('stderr:', process.stderr)
         return process
