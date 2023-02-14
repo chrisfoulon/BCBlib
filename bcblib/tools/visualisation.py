@@ -221,15 +221,6 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
         show_report = True
         print(f'############### IMAGE NUMBER {counter}/{len(seg_dict)} #################')
         while show_image or show_report:
-            if show_image:
-                if display == 'fsleyes':
-                    if (seg is not None and seg_coord) or label is None:
-                        coord = get_centre_of_mass(seg, round_coord=True).astype(int)
-                    else:
-                        coord = get_centre_of_mass(label, round_coord=True).astype(int)
-                else:
-                    coord = None
-                display_img(b1000, label, seg, display, coord)
             if show_report:
                 for ind, spreadsheet in enumerate(spreadsheets):
                     matched_entries = spreadsheet[spreadsheet[matching_columns[ind]] == pid][info_columns[ind]]
@@ -240,6 +231,15 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                                 # TODO
                                 break
                         print(f'###### {entry_ind}: {entry}')
+            if show_image:
+                if display == 'fsleyes':
+                    if (seg is not None and seg_coord) or label is None:
+                        coord = get_centre_of_mass(seg, round_coord=True).astype(int)
+                    else:
+                        coord = get_centre_of_mass(label, round_coord=True).astype(int)
+                else:
+                    coord = None
+                display_img(b1000, label, seg, display, coord)
             pprint(label_dict)
             print('Select a label from the list above using either the number or the label itself or ')
             print('quit [exit]: to quit and save')
