@@ -55,8 +55,8 @@ def display_img(img, over1=None, over2=None, display='mricron', coord=None):
     elif display == 'fsleyes':
         # img_opt = ['-cm', 'red', '-a', '40', ]
         if coord is not None:
-            coord_str = '-vl ' + ' '.join([str(c) for c in coord])
-            fsleyes_command = ['fsleyes', coord_str, str(img)]
+            coord_list = ['-vl'] + [str(c) for c in coord]
+            fsleyes_command = ['fsleyes'] + coord_list + [str(img)]
         else:
             fsleyes_command = ['fsleyes', str(img)]
         if over1 is not None:
@@ -65,11 +65,15 @@ def display_img(img, over1=None, over2=None, display='mricron', coord=None):
             fsleyes_command += [str(over2), '-cm', 'green', '-a', '40']
         fsleyes_command = fsleyes_command  # + img_opt
         print('Fsleyes command: "{}"'.format(' '.join(fsleyes_command)))
+        # os.environ["DISPLAY"] = ':1'
         process = subprocess.run(fsleyes_command,
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  universal_newlines=True
                                  )
+        if process.stderr != '':
+            print('exit status:', process.returncode)
+            print('stderr:', process.stderr)
         return process
     else:
         raise ValueError(f'{display} display tool unknown')
@@ -243,14 +247,14 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
             pprint(label_dict)
             print('Select a label from the list above using either the number or the label itself or ')
             print('quit [exit]: to quit and save')
-            print('image: to display the image again and ask for an answer again')
+            print('image [display]: to display the image again and ask for an answer again')
             print('report: to show the report(s) information again and ask for an answer again')
             resp = input()
             show_image = False
             show_report = False
             if resp.lower() == 'report':
                 show_report = True
-            elif resp.lower() == 'show':
+            elif resp.lower() in ['display', 'image']:
                 show_image = True
             elif resp.lower() in ['quit', 'exit']:
                 save_json(output_path, output_dict)
