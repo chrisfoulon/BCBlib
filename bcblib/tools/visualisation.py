@@ -215,7 +215,8 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
         print(f'Exception caught when trying to save {output_path}')
         raise e
     try:
-        for counter, k in enumerate([k for k in seg_dict if k not in output_dict]):
+        to_check_keys = [k for k in seg_dict if k not in output_dict]
+        for counter, k in enumerate(to_check_keys):
             pid = seg_dict[k]['PatientID']
             b1000 = Path(images_root, seg_dict[k]['b1000'])
             label = None
@@ -226,7 +227,7 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                 seg = Path(images_root, seg_dict[k]['segmentation'])
             show_image = True
             show_report = True
-            print(f'############### IMAGE NUMBER {counter}/{len(seg_dict)} #################')
+            print(f'############### IMAGE NUMBER {counter}/{len(to_check_keys)} #################')
             while show_image or show_report:
                 if show_report:
                     for ind, spreadsheet in enumerate(spreadsheets):
