@@ -65,8 +65,8 @@ def display_img(img, over1=None, over2=None, display='mricron', coord=None):
             fsleyes_command += [str(over2), '-cm', 'green', '-a', '40']
         fsleyes_command = fsleyes_command  # + img_opt
         print('Fsleyes command: "{}"'.format(' '.join(fsleyes_command)))
-        if "DISPLAY" not in os.environ:
-            os.environ["DISPLAY"] = ':1'
+        # if "DISPLAY" not in os.environ:
+        #     os.environ["DISPLAY"] = ':1'
         process = subprocess.run(fsleyes_command,
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
@@ -214,71 +214,76 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
     except Exception as e:
         print(f'Exception caught when trying to save {output_path}')
         raise e
-    init_counter = len(output_dict)
-    for counter, k in enumerate([k for k in seg_dict if k not in output_dict]):
-        pid = seg_dict[k]['PatientID']
-        b1000 = Path(images_root, seg_dict[k]['b1000'])
-        label = None
-        if 'label' in seg_dict[k]:
-            label = Path(images_root, seg_dict[k]['label'])
-        seg = None
-        if 'segmentation' in seg_dict[k]:
-            seg = Path(images_root, seg_dict[k]['segmentation'])
-        show_image = True
-        show_report = True
-        print(f'############### IMAGE NUMBER {init_counter + counter}/{len(seg_dict)} #################')
-        while show_image or show_report:
-            if show_report:
-                for ind, spreadsheet in enumerate(spreadsheets):
-                    matched_entries = spreadsheet[spreadsheet[matching_columns[ind]] == pid][info_columns[ind]]
-                    print(f'Spreadsheet number {ind} ###############')
-                    for entry_ind, entry in enumerate(matched_entries):
-                        if highlight_terms_list is not None:
-                            for term in highlight_terms_list:
-                                # TODO
-                                break
-                        print(f'###### {entry_ind}: {entry}')
-            if show_image:
-                if display == 'fsleyes':
-                    if (seg is not None and seg_coord) or label is None:
-                        coord = get_centre_of_mass(seg, round_coord=True).astype(int)
+    try:
+        to_check_keys = [k for k in seg_dict if k not in output_dict]
+        for counter, k in enumerate(to_check_keys):
+            pid = seg_dict[k]['PatientID']
+            b1000 = Path(images_root, seg_dict[k]['b1000'])
+            label = None
+            if 'label' in seg_dict[k]:
+                label = Path(images_root, seg_dict[k]['label'])
+            seg = None
+            if 'segmentation' in seg_dict[k]:
+                seg = Path(images_root, seg_dict[k]['segmentation'])
+            show_image = True
+            show_report = True
+            print(f'############### IMAGE NUMBER {counter}/{len(to_check_keys)} #################')
+            while show_image or show_report:
+                if show_report:
+                    for ind, spreadsheet in enumerate(spreadsheets):
+                        matched_entries = spreadsheet[spreadsheet[matching_columns[ind]] == pid][info_columns[ind]]
+                        print(f'Spreadsheet number {ind} ###############')
+                        for entry_ind, entry in enumerate(matched_entries):
+                            if highlight_terms_list is not None:
+                                for term in highlight_terms_list:
+                                    # TODO
+                                    break
+                            print(f'###### {entry_ind}: {entry}')
+                if show_image:
+                    if display == 'fsleyes':
+                        if (seg is not None and seg_coord) or label is None:
+                            coord = get_centre_of_mass(seg, round_coord=True).astype(int)
+                        else:
+                            coord = get_centre_of_mass(label, round_coord=True).astype(int)
                     else:
-                        coord = get_centre_of_mass(label, round_coord=True).astype(int)
-                else:
-                    coord = None
-                display_img(b1000, label, seg, display, coord)
-            pprint(label_dict)
-            print('Select a label from the list above using either the number or the label itself or ')
-            print('quit [exit]: to quit and save')
-            print('image [display]: to display the image again and ask for an answer again')
-            print('report: to show the report(s) information again and ask for an answer again')
-            resp = input()
-            show_image = False
-            show_report = False
-            if resp.lower() == 'report':
-                show_report = True
-            elif resp.lower() in ['display', 'image']:
-                show_image = True
-            elif resp.lower() in ['quit', 'exit']:
-                save_json(output_path, output_dict)
-                return output_dict
-            else:
-                if resp in label_dict.values():
-                    output_dict[k] = resp
+                        coord = None
+                    display_img(b1000, label, seg, display, coord)
+                pprint(label_dict)
+                print('Select a label from the list above using either the number or the label itself or ')
+                print('quit [exit]: to quit and save')
+                print('image [display]: to display the image again and ask for an answer again')
+                print('report: to show the report(s) information again and ask for an answer again')
+                resp = input('Answer: ')
+                show_image = False
+                show_report = False
+                if resp.lower() == 'report':
+                    show_report = True
+                elif resp.lower() in ['display', 'image']:
+                    show_image = True
+                elif resp.lower() in ['quit', 'exit']:
                     save_json(output_path, output_dict)
-                elif resp in label_dict.keys():
-                    output_dict[k] = label_dict[resp]
-                    save_json(output_path, output_dict)
+                    return output_dict
                 else:
-                    yn = input(f'{resp} is neither a label nor a label code.'
-                               f'\nDo you want to add this as a new label [Y/n]')
-                    if yn.lower() == 'n':
-                        print('Alright! Showing the image again!')
-                        show_image = True
-                    else:
+                    if resp in label_dict.values():
                         output_dict[k] = resp
                         save_json(output_path, output_dict)
-                        label_dict.update({str(len(label_dict)): resp})
-                        save_json(label_dict_path, label_dict)
-    save_json(output_path, output_dict)
+                    elif resp in label_dict.keys():
+                        output_dict[k] = label_dict[resp]
+                        save_json(output_path, output_dict)
+                    else:
+                        yn = input(f'{resp} is neither a label nor a label code.'
+                                   f'\nDo you want to add this as a new label [Y/n]')
+                        if yn.lower() == 'n':
+                            print('Alright! Showing the image again!')
+                            show_image = True
+                        else:
+                            output_dict[k] = resp
+                            save_json(output_path, output_dict)
+                            label_dict.update({str(len(label_dict)): resp})
+                            save_json(label_dict_path, label_dict)
+        save_json(output_path, output_dict)
+    except KeyboardInterrupt as e:
+        print('Script interrupted using keyboard interruption. Saving the output dictionary.')
+        save_json(output_path, output_dict)
+        raise e
     return output_dict
