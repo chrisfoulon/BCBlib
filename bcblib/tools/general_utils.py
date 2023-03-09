@@ -38,20 +38,20 @@ def split_dict(d, chunk_size, output_dir=None, output_pref=None):
     keys_list = list(d.keys())
     i = -1
     end_index = 0
+    chunk_list = []
     for i in range(len(keys_list) // chunk_size):
         begin_index = chunk_size * i
         end_index = chunk_size * (1 + i)
+        chunk = {k: d[k] for k in keys_list[begin_index:end_index]}
         if output_dir is not None:
-            save_json(output_dir.joinpath(f'{output_pref}_{i}.json'),
-                      {k: d[k] for k in keys_list[begin_index:end_index]})
-        print(len({k: d[k] for k in keys_list[begin_index:end_index]}))
-    print(len({k: d[k] for k in keys_list[end_index:]}))
-    save_json(output_dir.joinpath(f'{output_pref}_{i + 1}.json'),
-              {k: d[k] for k in keys_list[end_index:]})
-
-"""
-Continue the comment with the commands to upload this package to pypi:
-python setup.py sdist bdist_wheel
-twine upload dist/*
-
-"""
+            print(f'Saving chunk {i} to {output_dir.joinpath(f"{output_pref}_{i}.json")}')
+            save_json(output_dir.joinpath(f'{output_pref}_{i}.json'), chunk)
+        print(f'Chunk {i} length: {len(chunk)}')
+        chunk_list.append(chunk)
+    last_chunk = {k: d[k] for k in keys_list[end_index:]}
+    print(len(last_chunk))
+    if output_dir is not None:
+        save_json(output_dir.joinpath(f'{output_pref}_{i + 1}.json'),
+                  last_chunk)
+    chunk_list.append(last_chunk)
+    return chunk_list
