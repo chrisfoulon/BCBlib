@@ -227,7 +227,7 @@ def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, rou
     return distance_dict
 
 
-def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=False):
+def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=False, mean_for_std=None):
     if not isinstance(input_images, list):
         if Path(input_images).is_file():
             input_images = [str(p) for p in file_to_list(input_images) if is_nifti(p)]
@@ -238,6 +238,14 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=Fal
                 input_images = [str(p) for p in Path(input_images).iterdir() if is_nifti(p)]
         else:
             raise ValueError('Wrong input (must be a file/directory path of a list of paths)')
+    if mean_for_std is not None and mean:
+        raise ValueError('mean_for_std can only be used if mean is False')
+    if mean_for_std is not None:
+        # if mean_for_std is pathlike, load the image
+        if isinstance(mean_for_std, str) or isinstance(mean_for_std, Path) or is_nifti(mean_for_std):
+            mean_for_std = load_nifti(mean_for_std).get_fdata()
+        elif not isinstance(mean_for_std, np.ndarray):
+            raise ValueError('mean_for_std must be a pathlike object, a nifti image or a numpy array')
     if filter_pref:
         input_images = [p for p in input_images if Path(p).name.startswith(filter_pref)]
     if not input_images:
@@ -252,32 +260,86 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=Fal
             temp_overlap_data = nii.get_fdata()
         else:
             if mean:
-                temp_overlap_data = (temp_overlap_data + nii.get_fdata()) / 2
+                temp_overlap_data = temp_overlap_data + nii.get_fdata()
+            if mean_for_std is not None:
+                # imaging_stats['std'][modality] += np.square(current_data - imaging_stats['mean'][modality])
+                temp_overlap_data += np.square(nii.get_fdata() - mean_for_std)
             else:
                 temp_overlap_data += nii.get_fdata()
+    if mean_for_std is not None:
+        # imaging_stats['std'][key] = np.sqrt(imaging_stats['std'][key] / counters[key])
+        temp_overlap_data = np.sqrt(temp_overlap_data / len(input_images))
+    if mean:
+        temp_overlap_data = temp_overlap_data / len(input_images)
     temp_overlap = nib.Nifti1Image(temp_overlap_data, temp_overlap.affine)
     return temp_overlap
 
 
 def overlaps_subfolders(root_folder, filter_pref='', subfolders_recursive=True,
                         subfolders_overlap=False, output_pref='overlap_',
-                        save_in_root=True, mean=False):
+                        save_in_root=True, mean=False, std_pref=None):
+    """
+    Compute the overlap of all the images in the subfolders of a root folder
+    Notes: subfolders_overlap and subfolders_recursive are interacting with each other.
+    If both are True, each subfolder overlap will be the overlap of all the subfolders of the subfolder
+    Parameters
+    ----------
+    root_folder : str
+    filter_pref : str
+    subfolders_recursive : bool
+    subfolders_overlap : bool
+    output_pref : str
+    save_in_root : bool
+    mean : bool
+    std_pref : str
+
+    Returns
+    -------
+
+    """
+    if not Path(root_folder).is_dir():
+        raise ValueError('root_folder must be a directory')
     if subfolders_recursive and subfolders_overlap:
         raise ValueError('subfolders_recursive and subfolders_overlap cannot be True together')
     if subfolders_overlap:
         folder_list = [p for p in Path(root_folder).rglob('*') if p.is_dir()]
     else:
         folder_list = [p for p in Path(root_folder).iterdir() if p.is_dir()]
+    if not mean and std_pref is not None:
+        print('WARNING: std_pref is set but mean is False, mean will be computed anyway (if not already present)')
+        mean = True
+
     for subfolder in folder_list:
-        print(f'Overlap of [{subfolder.name}]')
         if save_in_root:
-            overlap_path = Path(root_folder, output_pref + subfolder.name + '.nii.gz')
+            output_folder = Path(root_folder)
         else:
-            overlap_path = Path(root_folder, subfolder.relative_to(root_folder).parent,
-                                output_pref + subfolder.name + '.nii.gz')
-        overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive, mean=mean)
-        if overlap_nifti is not None:
-            nib.save(overlap_nifti, overlap_path)
+            output_folder = Path(root_folder, subfolder.relative_to(root_folder).parent)
+        overlap_path = output_folder / (output_pref + subfolder.name + '.nii.gz')
+        if std_pref is not None:
+            std_output_path = Path(root_folder, subfolder.relative_to(root_folder).parent,
+                                   std_pref + subfolder.name + '.nii.gz')
+            if overlap_path.is_file():
+                print(f'Mean image found for [{subfolder.name}], computing std')
+                overlap_nifti = load_nifti(overlap_path)
+            else:
+                print(f'Computing mean image for [{subfolder.name}]')
+                overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive, mean=True)
+                if overlap_nifti is not None:
+                    nib.save(overlap_nifti, overlap_path)
+            if overlap_nifti is not None:
+                print(f'Computing std image for [{subfolder.name}]')
+                std_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive,
+                                                 mean_for_std=overlap_nifti.get_fdata())
+                if std_nifti is not None:
+                    nib.save(std_nifti, std_output_path)
+        else:
+            output_type = 'Overlap'
+            if mean:
+                output_type = 'Mean'
+            print(f'{output_type} of [{subfolder.name}]')
+            overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive, mean=mean)
+            if overlap_nifti is not None:
+                nib.save(overlap_nifti, overlap_path)
 
 
 def binarize_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int] = None):

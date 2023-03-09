@@ -8,7 +8,7 @@ def read(fname):
 
 setup(
     name='bcblib',        # This is the name of your PyPI-package.
-    version='0.3.2.4',     # Update the version number for new releases
+    version='0.3.2.5',     # Update the version number for new releases
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
     keywords='brain neuroimaging nifti cellular-automata bcbtoolkit bcblab',
     long_description=read('README.rst'),
