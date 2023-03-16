@@ -49,7 +49,7 @@ def split_dict(d, chunk_size, output_dir=None, output_pref=None):
         print(f'Chunk {i} length: {len(chunk)}')
         chunk_list.append(chunk)
     last_chunk = {k: d[k] for k in keys_list[end_index:]}
-    print(len(last_chunk))
+    print(f'Last chunk length: {len(last_chunk)}')
     if output_dir is not None:
         save_json(output_dir.joinpath(f'{output_pref}_{i + 1}.json'),
                   last_chunk)
