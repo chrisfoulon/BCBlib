@@ -48,6 +48,7 @@ def mricron_display(path: Union[str, bytes, os.PathLike],
 
 
 def display_img(img, over1=None, over2=None, display='mricron', coord=None):
+    # TODO change img so it can be a list of images
     data = nib.load(img).get_fdata()
     if display == 'mricron':
         img_opt = ['-x', '-c', '-0',
@@ -173,6 +174,7 @@ def loop_display_sort_folder(folder: Union[str, bytes, os.PathLike],
 def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label_dict_path=None, spreadsheets=None,
                                     matching_columns=None, info_columns=None, highlight_terms_list=None,
                                     display='fsleyes', seg_coord=False, zfill_matching_col=True):
+    # TODO add randomise_lbl_seg parameter.
     pd.set_option('display.max_colwidth', None)
     if not isinstance(seg_dict, dict):
         seg_dict = open_json(seg_dict)
@@ -247,7 +249,9 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                             coord = get_centre_of_mass(label, round_coord=True).astype(int)
                     else:
                         coord = None
+                    # TODO if randomise option, swap label for seg if random > .5
                     display_img(b1000, label, seg, display, coord)
+                    # TODO if randomise_lbl_seg option, prevent display_img from writing the command in the terminal!
                 pprint(label_dict)
                 print('Select a label from the list above using either the number or the label itself or ')
                 print('quit [exit]: to quit and save')
