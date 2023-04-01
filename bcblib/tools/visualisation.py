@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 from pprint import pprint
+import random
 
 import numpy as np
 import pandas as pd
@@ -47,7 +48,7 @@ def mricron_display(path: Union[str, bytes, os.PathLike],
     return process
 
 
-def display_img(img, over1=None, over2=None, display='mricron', coord=None):
+def display_img(img, over1=None, over2=None, display='mricron', coord=None, print_cmd=True):
     # TODO change img so it can be a list of images
     data = nib.load(img).get_fdata()
     if display == 'mricron':
@@ -65,7 +66,8 @@ def display_img(img, over1=None, over2=None, display='mricron', coord=None):
         if over2 is not None:
             fsleyes_command += [str(over2), '-cm', 'green', '-a', '40']
         fsleyes_command = fsleyes_command  # + img_opt
-        print('Fsleyes command: "{}"'.format(' '.join(fsleyes_command)))
+        if print_cmd:
+            print('Fsleyes command: "{}"'.format(' '.join(fsleyes_command)))
         # if "DISPLAY" not in os.environ:
         #     os.environ["DISPLAY"] = ':1'
         process = subprocess.run(fsleyes_command,
@@ -102,7 +104,8 @@ def display_img(img, over1=None, over2=None, display='mricron', coord=None):
         seg_opt = ['-o', str(over2), '-c', '-3', '-t', '-1']
     mricron_options = img_opt + label_opt + seg_opt
     mricron_command = ['mricron', str(img)] + mricron_options
-    print('Mricron command: "{}"'.format(mricron_command))
+    if print_cmd:
+        print('Mricron command: "{}"'.format(mricron_command))
     os.chdir(relative_dir)
     process = subprocess.run(mricron_command,
                              stdout=subprocess.PIPE,
@@ -172,9 +175,9 @@ def loop_display_sort_folder(folder: Union[str, bytes, os.PathLike],
 
 
 def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label_dict_path=None, spreadsheets=None,
-                                    matching_columns=None, info_columns=None, highlight_terms_list=None,
-                                    display='fsleyes', seg_coord=False, zfill_matching_col=True):
-    # TODO add randomise_lbl_seg parameter.
+                                    matching_columns=None, info_columns=None, display='fsleyes', seg_coord=False,
+                                    zfill_matching_col=True, highlight_terms_list=None, checking_key='manual_check',
+                                    checking_value=None, randomise_lbl_seg=False, no_coord=False):
     # TODO CLEAN THAT UP
     pd.set_option('display.max_colwidth', None)
     seg_dict_path = None
@@ -257,16 +260,18 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                                     break
                             print(f'###### {entry_ind}: {entry}')
                 if show_image:
-                    if display == 'fsleyes':
+                    if display == 'fsleyes' and not no_coord:
                         if (seg is not None and seg_coord) or label is None:
                             coord = get_centre_of_mass(seg, round_coord=True).astype(int)
                         else:
                             coord = get_centre_of_mass(label, round_coord=True).astype(int)
                     else:
                         coord = None
-                    # TODO if randomise option, swap label for seg if random > .5
-                    display_img(b1000, label, seg, display, coord)
-                    # TODO if randomise_lbl_seg option, prevent display_img from writing the command in the terminal!
+                    if randomise_lbl_seg:
+                        if label is not None and seg is not None:
+                            if random.random() > .5:
+                                label, seg = seg, label
+                    display_img(b1000, label, seg, display, coord, print_cmd=not randomise_lbl_seg)
                 pprint(label_dict)
                 print('Select a label from the list above using either the number or the label itself or ')
                 print('quit [exit]: to quit and save')
@@ -283,6 +288,7 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                     save_json(output_path, output_dict)
                     return output_dict
                 else:
+                    # TODO: if randomise_lbl_seg, there should be 2 ratings for each image
                     value = None
                     if resp in label_dict.values():
                         value = resp
