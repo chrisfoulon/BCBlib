@@ -175,11 +175,23 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                                     matching_columns=None, info_columns=None, highlight_terms_list=None,
                                     display='fsleyes', seg_coord=False, zfill_matching_col=True):
     # TODO add randomise_lbl_seg parameter.
+    # TODO CLEAN THAT UP
     pd.set_option('display.max_colwidth', None)
+    seg_dict_path = None
     if not isinstance(seg_dict, dict):
+        seg_dict_path = seg_dict
         seg_dict = open_json(seg_dict)
-    if not Path(output_path).parent.is_dir():
+    else:
+        if checking_value is not None:
+            raise ValueError('You cannot check a value in seg_dict if seg_dict is not a json file')
+    if not Path(output_path).parent.is_dir() and checking_value is None:
         raise ValueError(f'Parent folder of {output_path} must be an existing directory')
+    if checking_value is not None:
+        resp = input(f'WARNING: You selected a value to check, the output_path is then ignored and the input seg_dict '
+                     f'will be modified and saved. Are you sure you want to continue? [y/n]')
+        if resp.lower() not in ['y', 'yes']:
+            print('Abort mission! (ノಠ益ಠ)ノ彡┻━┻')
+            return
     label_dict = open_json(label_dict_path)
     if spreadsheets is not None:
         if not isinstance(spreadsheets, list):
@@ -217,7 +229,10 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
         print(f'Exception caught when trying to save {output_path}')
         raise e
     try:
-        to_check_keys = [k for k in seg_dict if k not in output_dict]
+        if checking_value is None:
+            to_check_keys = [k for k in seg_dict if k not in output_dict]
+        else:
+            to_check_keys = [k for k in seg_dict if seg_dict[k][checking_key] == checking_value]
         for counter, k in enumerate(to_check_keys):
             pid = seg_dict[k]['PatientID']
             b1000 = Path(images_root, seg_dict[k]['b1000'])
@@ -268,11 +283,14 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                     save_json(output_path, output_dict)
                     return output_dict
                 else:
+                    value = None
                     if resp in label_dict.values():
-                        output_dict[k] = resp
+                        value = resp
+                        output_dict[k] = value
                         save_json(output_path, output_dict)
                     elif resp in label_dict.keys():
-                        output_dict[k] = label_dict[resp]
+                        value = label_dict[resp]
+                        output_dict[k] = value
                         save_json(output_path, output_dict)
                     else:
                         yn = input(f'{resp} is neither a label nor a label code.'
@@ -281,10 +299,14 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                             print('Alright! Showing the image again!')
                             show_image = True
                         else:
-                            output_dict[k] = resp
+                            value = resp
+                            output_dict[k] = value
                             save_json(output_path, output_dict)
                             label_dict.update({str(len(label_dict)): resp})
                             save_json(label_dict_path, label_dict)
+                    if value is not None and checking_value is not None:
+                        seg_dict[k][checking_key] = value
+                        save_json(seg_dict_path, seg_dict)
         save_json(output_path, output_dict)
     except KeyboardInterrupt as e:
         print('Script interrupted using keyboard interruption. Saving the output dictionary.')
