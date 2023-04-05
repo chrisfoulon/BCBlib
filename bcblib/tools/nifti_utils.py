@@ -3,6 +3,7 @@ from pathlib import Path
 import csv
 from typing import Union
 
+from nilearn.regions import connected_regions
 from tqdm import tqdm
 import numpy as np
 from scipy.spatial.distance import euclidean
@@ -419,3 +420,11 @@ def laterality_ratio(image):
     right_ratio = right_les / total_les_vol
     left_ratio = left_les / total_les_vol
     return left_ratio - right_ratio
+
+
+def has_big_enough_cluster(img, min_cluster_size=4):
+    hdr = load_nifti(img)
+    data, _ = connected_regions(hdr, min_region_size=1, extract_type='connected_components', smoothing_fwhm=0)
+    data = data.get_fdata()
+    max_cluster_size = np.max([np.count_nonzero(data[..., i]) for i in range(data.shape[-1])])
+    return max_cluster_size >= min_cluster_size
