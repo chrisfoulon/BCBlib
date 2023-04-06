@@ -177,7 +177,49 @@ def loop_display_sort_folder(folder: Union[str, bytes, os.PathLike],
 def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label_dict_path=None, spreadsheets=None,
                                     matching_columns=None, info_columns=None, display='fsleyes', seg_coord=False,
                                     zfill_matching_col=True, highlight_terms_list=None, checking_key='manual_check',
-                                    checking_value=None, randomise_lbl_seg=False, no_coord=False):
+                                    checking_value=None, randomise_lbl_seg=False, no_coord=False, lock_labels=False):
+    """
+    Check and annotate a segmentation dictionary.
+    Parameters
+    ----------
+    seg_dict : dict or str
+        Segmentation dictionary or path to a json file containing the segmentation dictionary.
+    output_path : str
+        Path to the output json file.
+    images_root : str
+        Path to the root folder containing the images.
+    label_dict_path : str
+        Path to the json file containing the label dictionary.
+    spreadsheets : list of str
+        List of paths to the spreadsheets containing the information about the images.
+    matching_columns : list of str
+        List of columns in the spreadsheets that will be used to match the images.
+    info_columns : list of str
+        List of columns in the spreadsheets that will be used to display information about the images.
+    display : str
+        Display software to use. Can be 'fsleyes' or 'mricron'.
+    seg_coord : bool
+        If True, the coordinates of the segmentation will be displayed.
+    zfill_matching_col : bool
+        If True, the matching columns will be zfilled to 4 digits.
+    highlight_terms_list : list of str
+        List of terms to highlight in the spreadsheets.
+    checking_key : str
+        Key in the seg_dict that will be used to check the segmentation.
+    checking_value : str
+        Value of the checking_key that will be used to check the segmentation.
+    randomise_lbl_seg : bool
+        If True, the labels and the segmentations will be randomly shuffled.
+    no_coord : bool
+        If True, the coordinates will not be displayed.
+    lock_labels : bool
+        If True, the labels will not be shuffled.
+
+    Returns
+    -------
+    output_dict : dict
+        Segmentation dictionary.
+    """
     # TODO CLEAN THAT UP
     pd.set_option('display.max_colwidth', None)
     seg_dict_path = None
@@ -238,13 +280,22 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
             to_check_keys = [k for k in seg_dict if seg_dict[k][checking_key] == checking_value]
         for counter, k in enumerate(to_check_keys):
             pid = seg_dict[k]['PatientID']
-            b1000 = Path(images_root, seg_dict[k]['b1000'])
+            if not Path(seg_dict[k]['b1000']).exists():
+                b1000 = Path(images_root, seg_dict[k]['b1000'])
+            else:
+                b1000 = seg_dict[k]['b1000']
             label = None
             if 'label' in seg_dict[k]:
-                label = Path(images_root, seg_dict[k]['label'])
+                if not Path(seg_dict[k]['label']).exists():
+                    label = Path(images_root, seg_dict[k]['label'])
+                else:
+                    label = seg_dict[k]['label']
             seg = None
             if 'segmentation' in seg_dict[k]:
-                seg = Path(images_root, seg_dict[k]['segmentation'])
+                if not Path(seg_dict[k]['segmentation']).exists():
+                    seg = Path(images_root, seg_dict[k]['segmentation'])
+                else:
+                    seg = seg_dict[k]['segmentation']
             show_image = True
             show_report = True
             print(f'############### IMAGE NUMBER {counter}/{len(to_check_keys)} #################')
