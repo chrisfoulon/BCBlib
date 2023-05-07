@@ -323,6 +323,8 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
                             if random.random() > .5:
                                 label, seg = seg, label
                     display_img(b1000, label, seg, display, coord, print_cmd=not randomise_lbl_seg)
+                # if randomise_lbl_seg we need two different ratings for each image, so we count them.
+                count_answer = 0
                 pprint(label_dict)
                 print('Select a label from the list above using either the number or the label itself or ')
                 print('quit [exit]: to quit and save')

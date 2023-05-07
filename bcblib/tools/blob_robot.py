@@ -23,6 +23,12 @@ We could add a colour scheme for multi states CA where the colour depends on the
 
 
 class Cell:
+    """
+    A cell is a point in space that can have a state and a spawn time.
+    The spawn time is the iteration time at which the cell was created.
+    The state is the current state of the cell.
+    The next state is the state the cell will have at the next iteration.
+    """
     def __init__(self, state=0, spawn_default_value=-1):
         self.spawn_default_value = spawn_default_value
         self.state = 0
@@ -54,6 +60,18 @@ class Cell:
 
 # TODO make a helper function module in the bcblib for generic functions like this one.
 def coord_in_array(coord, array):
+    """
+
+    Parameters
+    ----------
+    coord: tuple
+    array: np.ndarray
+
+    Returns
+    -------
+    bool
+
+    """
     if len(coord) != len(array.shape):
         raise ValueError('Coord must have the same dimension as array.shape')
     in_arr = True
@@ -65,19 +83,31 @@ def coord_in_array(coord, array):
 
 def create_shapes_in_arr(cell_array, coords=1, structure=None, connectivity=None, dimensions=3, value=1, it_time=0):
     """
+    Create shapes in an array of cells.
+    The shapes are created by dilating a random number of points in the array.
+    The number of points is given by the 'coords' parameter.
+    The dilation is defined with a structure or a connectivity.
+    The structure is a binary array
     Parameters
     ----------
-    cell_array
-    coords
-    structure
-    connectivity
-    dimensions
-    value
-    it_time
+    cell_array: np.ndarray
+    coords: int or list of tuples
+    structure: np.ndarray
+    connectivity: int
+    dimensions: int
+    value: int
+    it_time: int
 
     Returns
     -------
-
+    None
+    Examples:
+    >>> import numpy as np
+    >>> from bcblib.tools.blob_robot import create_shapes_in_arr
+    >>> arr = np.zeros((10, 10, 10))
+    >>> create_shapes_in_arr(arr, coords=10, value=1)
+    >>> np.count_nonzero(arr)
+    10
     """
     if structure is None and connectivity is None:
         raise ValueError('Either a structure or a connectivity must be provided')
@@ -114,6 +144,21 @@ def get_neighbours(array, cell_coord, out_of_bound_values=0):
 
 
 def create_neighbours_array(state_array, footprint=None, neighbourhood='moore', out_of_bound_values=0):
+    """
+    Create an array of the number of neighbours for each cell in the state_array.
+    The neighbourhood can be either 'moore' or 'von_neumann' (not implemented yet).
+    The footprint is the shape of the neighbourhood.
+    Parameters
+    ----------
+    state_array: np.ndarray
+    footprint: np.ndarray
+    neighbourhood: str
+    out_of_bound_values: int
+
+    Returns
+    -------
+
+    """
     if footprint is None and neighbourhood == 'moore':
         footprint = np.ones((3,) * 3)
         footprint[1, 1, 1] = 0
@@ -209,6 +254,19 @@ def apply_rule_to_cell(array, cell_coord, neighbour_array, it_time, rule=(4, 2, 
     
 
 def evolve_automaton(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
+    """
+    Evolve the automaton one step forward.
+    Parameters
+    ----------
+    cell_array
+    it_time
+    rule
+    fading
+
+    Returns
+    -------
+
+    """
     neighbour_array = create_neighbours_array(cell_array_to_state_array(cell_array))
     with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
         acc = 0
@@ -222,6 +280,18 @@ def evolve_automaton(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
 
 
 def cell_array_to_state_array(cell_array, value_mode='state'):
+    """
+    Convert a cell array to a state array.
+
+    Parameters
+    ----------
+    cell_array: np.ndarray
+    value_mode: str
+
+    Returns
+    -------
+
+    """
     state_array = np.zeros_like(cell_array, dtype=int)
     with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
         for c in it:
@@ -233,6 +303,18 @@ def cell_array_to_state_array(cell_array, value_mode='state'):
 
 
 def create_cell_array(shape, init_state=0):
+    """
+    Create a cell array of the given shape and initialize all the cells to the given state.
+
+    Parameters
+    ----------
+    shape: tuple
+    init_state: int
+
+    Returns
+    -------
+
+    """
     cell_array = np.empty(shape, dtype=object)
     with np.nditer(cell_array, flags=['refs_ok', 'multi_index'], op_flags=['readwrite']) as it:
         for c in it:
