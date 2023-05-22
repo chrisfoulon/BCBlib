@@ -182,15 +182,15 @@ def check_and_annotate_segmentation(seg_dict, output_path, images_root='', label
     Check and annotate a segmentation dictionary.
     Parameters
     ----------
-    seg_dict : dict or str
+    seg_dict : dict or str or Path
         Segmentation dictionary or path to a json file containing the segmentation dictionary.
-    output_path : str
+    output_path : str or Path
         Path to the output json file.
-    images_root : str
+    images_root : str or Path
         Path to the root folder containing the images.
-    label_dict_path : str
+    label_dict_path : str or Path
         Path to the json file containing the label dictionary.
-    spreadsheets : list of str
+    spreadsheets : list of str or Path
         List of paths to the spreadsheets containing the information about the images.
     matching_columns : list of str
         List of columns in the spreadsheets that will be used to match the images.
