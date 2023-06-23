@@ -12,7 +12,7 @@ def create_balanced_split(info_dict_keys, info_dict, num_splits=5):
     bilat_offset = 2
     for k in info_dict_keys:
         clu_name = info_dict[k]['lesion_cluster']
-        if clu_name == 'outside_clusters':
+        if clu_name == 'outside_clusters' or clu_name == 'empty_prediction':
             cluster_dict[clu_name].append(k)
         else:
             cluster_dict[clu_name[bilat_offset:]].append(k)
