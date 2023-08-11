@@ -123,6 +123,15 @@ def filtered_images_to_4d(images, filtered_filenames, output_dir, pref=''):
 
 
 def randomise_helper():
+    """
+    Helper function to create a design matrix and 4D image to input to fsl randomise
+    Returns
+    -------
+
+    Examples:
+    ---------
+    randomise_helper('/home/user/Downloads/', '/home/user/Downloads/spreadsheet.xlsx', '/home/user/Downloads/masks/')
+    """
     desc = "Helper function to create a design matrix and 4D image to input to fsl randomise"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('output_dir', type=str, help='Path to the output directory (created if not existing)')
