@@ -3,6 +3,7 @@ import random
 from tqdm import tqdm
 
 import numpy as np
+from tqdm import tqdm
 
 from bcblib.tools.general_utils import open_json
 from scipy.stats import kruskal

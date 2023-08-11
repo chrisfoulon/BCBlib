@@ -42,7 +42,7 @@ def import_spreadsheet(spreadsheet: Union[pd.DataFrame, str, bytes, os.PathLike]
     else:
         if not Path(spreadsheet).is_file():
             raise ValueError(f'{spreadsheet} is no an existing file path')
-        if spreadsheet.endswith('.csv'):
+        if str(spreadsheet).endswith('.csv'):
             df = pd.read_csv(spreadsheet, header=header)
         else:
             df = pd.read_excel(spreadsheet, header=header)
