@@ -564,7 +564,7 @@ def rate_two_segmentations(seg_dict, output_path, images_root='', label_dict_pat
                         for entry_ind, entry in enumerate(matched_entries):
                             print(f'###### {entry_ind}: {entry}')
                 if show_image:
-                    display_img(b1000, label, display, coord, print_cmd=not randomise_lbl_seg)
+                    display_img(b1000, label, coord=coord, display=display)
                 pprint(label_dict)
                 print('Please, select a label from the list above using either the number or the label itself or ')
                 print('quit [exit]: to quit and save')
@@ -616,7 +616,7 @@ def rate_two_segmentations(seg_dict, output_path, images_root='', label_dict_pat
                         for entry_ind, entry in enumerate(matched_entries):
                             print(f'###### {entry_ind}: {entry}')
                 if show_image:
-                    display_img(b1000, seg, display, coord, print_cmd=not randomise_lbl_seg)
+                    display_img(b1000, seg, coord=coord, display=display)
                 pprint(label_dict)
                 print('Please, select a label from the list above using either the number or the label itself or ')
                 print('quit [exit]: to quit and save')
