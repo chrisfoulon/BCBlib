@@ -1,4 +1,6 @@
 #! /bin/bash
+
+source ~/.profile
 [ $# -lt 2 ] && { echo 'Usage :
   $1 = the image to register
   $2 = reg image output folder
