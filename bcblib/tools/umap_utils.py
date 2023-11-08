@@ -325,7 +325,11 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     methods = ['bonferroni', 'sidak', 'holm-sidak', 'holm', 'simes-hochberg', 'hommel', 'fdr_bh', 'fdr_by',
                'fdr_tsbh', 'fdr_tsbky']
     for m in methods:
-        corrected_p_values = smm.multipletests(heatmaps[1].flatten(), alpha=0.05, method=m)
+        corrected_p_values = smm.multipletests(heatmaps[1].flatten(), alpha=0.05, method=m, maxiter=-1)
+        # if corrected_p_values doesn't contain anything between 0 < p < 0.05 skip the method
+        if np.sum(corrected_p_values[1] < 0.05) == 0:
+            print(f'No p-values between 0 and 0.05 using the {m} method')
+            continue
         corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
 
         plt.imshow(corrected_p_values.T, origin='lower')
