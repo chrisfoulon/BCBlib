@@ -29,6 +29,7 @@ def nifti_dataset_to_matrix(nifti_list: List[nib.Nifti1Image], pre_allocate_memo
     Parameters
     ----------
     nifti_list : list of nibabel.Nifti1Image
+    pre_allocate_memory : bool, optional
 
     Returns
     -------
@@ -205,7 +206,7 @@ def compute_heatmap(smoothed_3d_coord, dependant_variable_values, method='spearm
 
 
 def create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
-                       out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1,
+                       out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
                        **umap_param):
     """
     Creates a morphospace from the input matrix
@@ -248,16 +249,18 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     orig_umap_space -= np.min(orig_umap_space, axis=0)
 
     # plot the space
-    plt.scatter(orig_umap_space[:, 0], orig_umap_space[:, 1], cmap='Spectral', s=20)
-    plt.show()
+    if show == -1 or 1 in show:
+        plt.scatter(orig_umap_space[:, 0], orig_umap_space[:, 1], cmap='Spectral', s=20)
+        plt.show()
     # then we rescale the coordinates to the output nd-grid
     rescaled_coords, scaling_factor = rescale_morphostace_coord(
         input_matrix, trained_umap, out_cell_nb)
     # round the coordinates
     rescaled_coords_rounded = np.round(rescaled_coords).astype(int)
     # plot
-    plt.scatter(rescaled_coords_rounded[:, 0], rescaled_coords_rounded[:, 1], cmap='Spectral', s=20)
-    plt.show()
+    if show == -1 or 2 in show:
+        plt.scatter(rescaled_coords_rounded[:, 0], rescaled_coords_rounded[:, 1], cmap='Spectral', s=20)
+        plt.show()
     # the bounding box is the maximum coordinates rounded up in each dimension of rescaled_coords
     bounding_box = [np.max(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]
     bounding_box = np.array(bounding_box).astype(int)
@@ -274,8 +277,9 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     # display scatter plot of the morphospace's sum
     sum_morphospace = np.sum(morphospace, axis=0)
     points_coord = np.argwhere(sum_morphospace > 0)
-    plt.scatter(points_coord[:, 0], points_coord[:, 1], cmap='Spectral', s=20)
-    plt.show()
+    if show == -1 or 3 in show:
+        plt.scatter(points_coord[:, 0], points_coord[:, 1], cmap='Spectral', s=20)
+        plt.show()
     # smooth the morphospace
     # modes = ['reflect', 'constant', 'nearest', 'mirror', 'wrap']
     # for m in modes:
@@ -295,8 +299,9 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     sum_morphospace_nii = nib.Nifti1Image(sum_morphospace, np.eye(4))
     nib.save(sum_morphospace_nii, 'sum_morphospace.nii.gz')
     # plot the sum of the morphospace
-    plt.imshow(sum_morphospace.T, origin='lower')
-    plt.show()
+    if show == -1 or 4 in show:
+        plt.imshow(sum_morphospace.T, origin='lower')
+        plt.show()
     # len of dependent variable must be equal to the number of columns of the input matrix
     print(f'len(dependent_variable): {len(dependent_variable)}')
     print(f'input_matrix.shape: {input_matrix.shape}')
@@ -304,23 +309,29 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
         raise ValueError(f'len(dependent_variable) must be equal to the number of columns of the input matrix')
     heatmaps = compute_heatmap(morphospace, dependent_variable, method='pearsonr')
     # plot the heatmaps, heatmaps[0] is the correlation coefficient, heatmaps[1] is the p-value
-    plt.imshow(heatmaps[0].T, origin='lower')
-    # with a colourbar
-    plt.colorbar()
-    plt.show()
-    plt.imshow(heatmaps[1].T, origin='lower')
-    # with a colourbar
-    plt.colorbar()
-    plt.show()
+    if show == -1 or 5 in show:
+        plt.imshow(heatmaps[0].T, origin='lower')
+        # with a colourbar
+        plt.colorbar()
+        plt.show()
+    if show == -1 or 6 in show:
+        plt.imshow(heatmaps[1].T, origin='lower')
+        # with a colourbar
+        plt.colorbar()
+        plt.show()
     # statsmodels.stats.multitest.multipletests(pvals, alpha=0.05, method='hs', maxiter=1, is_sorted=False,
     #                                           returnsorted=False)
     # use fdr_bh method to correct for multiple comparisons the p-values and then plot the heatmap
-    corrected_p_values = smm.multipletests(heatmaps[1].flatten(), alpha=0.05, method='fdr_bh')
-    corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
+    methods = ['bonferroni', 'sidak', 'holm-sidak', 'holm', 'simes-hochberg', 'hommel', 'fdr_bh', 'fdr_by',
+               'fdr_tsbh', 'fdr_tsbky']
+    for m in methods:
+        corrected_p_values = smm.multipletests(heatmaps[1].flatten(), alpha=0.05, method=m)
+        corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
 
-    plt.imshow(corrected_p_values.T, origin='lower')
-    # with a colourbar
-    plt.colorbar()
-    plt.show()
+        plt.imshow(corrected_p_values.T, origin='lower')
+        # with a colourbar
+        plt.colorbar()
+        plt.title(f'Corrected p-values using the {m} method')
+        plt.show()
     return heatmaps
 
