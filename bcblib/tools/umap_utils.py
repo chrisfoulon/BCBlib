@@ -204,7 +204,8 @@ def compute_heatmap(smoothed_3d_coord, dependant_variable_values, method='spearm
     return heatmaps
 
 
-def create_morphospace(input_matrix, dependent_variable, out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1,
+def create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
+                       out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1,
                        **umap_param):
     """
     Creates a morphospace from the input matrix
@@ -227,8 +228,18 @@ def create_morphospace(input_matrix, dependent_variable, out_cell_nb=10000, fwhm
     The columns of the input_matrix are the input observation and their order is preserved in the output morphospace
     """
 
+    if not Path(output_folder).is_dir():
+        Path(output_folder).mkdir(parents=True)
+
     # first we train the UMAP model
-    trained_umap = train_umap(input_matrix, **umap_param)
+    if trained_umap is None:
+        trained_umap = train_umap(input_matrix, **umap_param)
+        joblib.dump(trained_umap, Path(output_folder).joinpath('trained_umap.sav'))
+    else:
+        print('Using the provided trained UMAP model')
+        trained_umap = joblib.load(trained_umap)
+
+    # save the trained UMAP model
     print('UMAP trained')
     # then we transform the input matrix into the UMAP space
     orig_umap_space = trained_umap.transform(input_matrix)
