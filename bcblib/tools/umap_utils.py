@@ -5,6 +5,7 @@ import nibabel as nib
 import numpy as np
 import joblib
 import umap
+import matplotlib as mpl
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter
 from scipy.stats import pearsonr, spearmanr
@@ -229,6 +230,9 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     The columns of the input_matrix are the input observation and their order is preserved in the output morphospace
     """
 
+    # use hot_r colorbar for the heatmaps
+    mpl.rcParams['image.cmap'] = 'hot_r'
+
     if not Path(output_folder).is_dir():
         Path(output_folder).mkdir(parents=True)
 
@@ -333,8 +337,9 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
         corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
 
         plt.imshow(corrected_p_values.T, origin='lower')
-        # with a colourbar
+        # add a colorbard with hot colours for the significant p-values
         plt.colorbar()
+
         plt.title(f'Corrected p-values using the {m} method')
         plt.show()
     return heatmaps
