@@ -335,7 +335,8 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
             print(f'No p-values between 0 and 0.05 using the {m} method')
             continue
         corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
-
+        # threshold the corrected p-values to only keep the significant ones (< 0.05)
+        corrected_p_values[corrected_p_values >= 0.05] = np.nan
         plt.imshow(corrected_p_values.T, origin='lower')
         # add a colorbard with hot colours for the significant p-values
         plt.colorbar()
