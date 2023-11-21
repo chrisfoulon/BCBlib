@@ -8,7 +8,7 @@ import umap
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 import statsmodels.stats.multitest as smm
 from tqdm import tqdm
 
@@ -200,14 +200,43 @@ def compute_heatmap(smoothed_3d_coord, dependant_variable_values, method='spearm
         #     lambda x: pearsonr(x, dependant_variable_values).correlation, 0, smoothed_3d_coord)
         heatmaps = np.apply_along_axis(
             lambda x: pearsonr(x, dependant_variable_values), 0, smoothed_3d_coord)
+    elif method == 'mannwhitneyu':
+        heatmaps = np.apply_along_axis(
+            lambda x: mannwhitneyu(x, dependant_variable_values), 0, smoothed_3d_coord)
     else:
         raise ValueError(f'Unknown method: {method}')
     # heatmaps should be 2 2D arrays (correlation coefficient/statistics and p-value)
     return heatmaps
 
 
+def get_overlaping_input_indices(corrected_p_values, morphospace):
+    """
+    Gets the inputs that are in the morphospace
+    Parameters
+    ----------
+    input_matrix : np.ndarray
+        matrix where each row is a flattened nifti image
+    corrected_p_values : np.ndarray
+        corrected p-values
+    morphospace : np.ndarray
+        3D array of the 2D smoothed slices of corresponding to the embedded coordinates in the UMAP space
+
+    Returns
+    -------
+    overlaping_inputs : list
+    """
+    # for each 2D in the morphospace check which overlaps with the corrected p-values
+    overlaping_inputs = []
+    for i in range(morphospace.shape[0]):
+        # if the slice of the morphospace overlaps with corrected_p_values, add i to overlaping_inputs
+        if np.sum(morphospace[i, :, :] * corrected_p_values) > 0:
+            overlaping_inputs.append(i)
+    return overlaping_inputs
+
+
 def create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
                        out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
+                       stats_method='pearsonr', points_overlap_proportion_threshold=0.8,
                        **umap_param):
     """
     Creates a morphospace from the input matrix
@@ -231,7 +260,7 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     """
 
     # use hot_r colorbar for the heatmaps
-    mpl.rcParams['image.cmap'] = 'hot_r'
+    mpl.rcParams['image.cmap'] = 'autumn'
 
     if not Path(output_folder).is_dir():
         Path(output_folder).mkdir(parents=True)
@@ -281,6 +310,27 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     # display scatter plot of the morphospace's sum
     sum_morphospace = np.sum(morphospace, axis=0)
     points_coord = np.argwhere(sum_morphospace > 0)
+    print(f'points_coord.shape: {points_coord.shape}')
+    # if the first dimension of the points_coord is less than points_overlap_proportion_threshold of
+    # the number observations in input_matrix, then throw a warning (very visible)
+    if points_coord.shape[0] < points_overlap_proportion_threshold * input_matrix.shape[0]:
+        raise Warning(f'Less than {points_overlap_proportion_threshold} of the observations in input_matrix are '
+                      f'in the morphospace. You might want to increase the number of cells in the output nd-grid')
+
+
+    # """
+    # Test with the euclidian distance of one selected point and the rest of the points.
+    # Use this euclidian distance as the dependent variable. Only show 10 random point
+    # """
+    # # give 10 random points FROM POINTS_COORD coordinates to the user to select one
+    # random_points_coord = points_coord[np.random.choice(points_coord.shape[0], 10, replace=False), :]
+    # selected_point_coords = input(f'Please select one of the following points: {random_points_coord}')
+    # # the coordinates of the selected point are a tuple of 2 integers
+    # selected_point_coords = tuple([int(i) for i in selected_point_coords.split(',')])
+    # # get the euclidian distance of the selected point to all the other points
+    # distance_from_selected_point = np.linalg.norm(points_coord - selected_point_coords, axis=1)
+    # print(f'distance_from_selected_point.shape: {distance_from_selected_point.shape}')
+
     if show == -1 or 3 in show:
         plt.scatter(points_coord[:, 0], points_coord[:, 1], cmap='Spectral', s=20)
         plt.show()
@@ -311,7 +361,10 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     print(f'input_matrix.shape: {input_matrix.shape}')
     if len(dependent_variable) != input_matrix.shape[0]:
         raise ValueError(f'len(dependent_variable) must be equal to the number of columns of the input matrix')
-    heatmaps = compute_heatmap(morphospace, dependent_variable, method='pearsonr')
+
+    # dependent_variable = distance_from_selected_point.flatten()
+
+    heatmaps = compute_heatmap(morphospace, dependent_variable, method=stats_method)
     # plot the heatmaps, heatmaps[0] is the correlation coefficient, heatmaps[1] is the p-value
     if show == -1 or 5 in show:
         plt.imshow(heatmaps[0].T, origin='lower')
@@ -337,6 +390,10 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
         corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
         # threshold the corrected p-values to only keep the significant ones (< 0.05)
         corrected_p_values[corrected_p_values >= 0.05] = np.nan
+
+        correlated_input_indices = get_overlaping_input_indices(corrected_p_values, morphospace)
+        print(f'Indices of correlated inputs: {correlated_input_indices}')
+
         plt.imshow(corrected_p_values.T, origin='lower')
         # add a colorbard with hot colours for the significant p-values
         plt.colorbar()
