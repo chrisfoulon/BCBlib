@@ -1,3 +1,5 @@
+import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Sequence, List
 
@@ -11,6 +13,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 import statsmodels.stats.multitest as smm
 from tqdm import tqdm
+import mne
 
 from bcblib.tools.nifti_utils import reorient_to_canonical
 
@@ -96,7 +99,6 @@ def find_scaling_factor(out_cell_nb, max_coordinates):
 
 
 def smooth_morphospace_points(morphospace, sigma=None, fwmm=None, mode='reflect'):
-
     # First, we need to separate the pixels into individual 2D arrays
 
     # TODO that would be good to have a smoothing proportional to the size of the morphospace
@@ -110,8 +112,11 @@ def smooth_morphospace_points(morphospace, sigma=None, fwmm=None, mode='reflect'
             sigma = sigma
         else:
             sigma = fwhm_to_sigma(fwmm)
-        # smooth the morphospace
-        morphospace = gaussian_filter(morphospace, sigma=sigma, mode=mode)
+        # create a tuple with the sigma for each dimension besides the first one which
+        # should not be smoothed
+        sigma_tuple = (0,) + (sigma,) * (morphospace.ndim - 1)
+        # smooth the morphospace along the first axis
+        morphospace = gaussian_filter(morphospace, sigma=sigma_tuple, mode=mode)
     return morphospace
 
 
@@ -166,9 +171,17 @@ def get_3d_space(rounded_coordinates, bounding_box, filling_value=1):
     # create a 3D array of len(rounded_coordinates) 2D arrays of shape bounding_box
     volume = np.zeros((len(rounded_coordinates), *bounding_box))
     # fill the 2D arrays with the filling_value at the rounded coordinates
-    for i, coord in enumerate(rounded_coordinates):
+    for i, coord in tqdm(enumerate(rounded_coordinates)):
         volume[i, coord[0], coord[1]] = filling_value
     return volume
+
+
+def compute_scores_heatmap(smoothed_3d_coord, dependant_variable_values):
+    # weight each slice of smoother_3d_coord by the dependant_variable_values
+    weighted_smoothed_3d_coord = deepcopy(smoothed_3d_coord)
+    for i in range(smoothed_3d_coord.shape[0]):
+        weighted_smoothed_3d_coord[i, :, :] *= dependant_variable_values[i]
+    return weighted_smoothed_3d_coord
 
 
 def compute_heatmap(smoothed_3d_coord, dependant_variable_values, method='spearmanr'):
@@ -188,9 +201,20 @@ def compute_heatmap(smoothed_3d_coord, dependant_variable_values, method='spearm
     heatmaps : np.ndarray
 
     """
+    # TODO TRY https://mne.tools/stable/generated/mne.stats.permutation_cluster_test.html
+    if method == 'mne':
+        # try with the pearsonr with dependant_variable_values
+        def stat_func(x):
+            pearsonr(x, dependant_variable_values)
+            # mannwhitneyu(x, dependant_variable_values)
+
+        morphospace_list = []
+        for i in range(smoothed_3d_coord.shape[0]):
+            morphospace_list.append(smoothed_3d_coord[i, :, :].flatten())
+        heatmaps = mne.stats.permutation_cluster_test(morphospace_list, n_permutations=1000)
     # compute the heatmap so the 3D smoothed morphospace becomes a 2D array with each cell containing the statistic
     # of the correlation between the columns of the smoothed morphospace and the dependant variable
-    if method == 'spearmanr':
+    elif method == 'spearmanr':
         # heatmap = np.apply_along_axis(
         #     lambda x: spearmanr(x, dependant_variable_values).correlation, 0, smoothed_3d_coord)
         heatmaps = np.apply_along_axis(
@@ -209,16 +233,14 @@ def compute_heatmap(smoothed_3d_coord, dependant_variable_values, method='spearm
     return heatmaps
 
 
-def get_overlaping_input_indices(corrected_p_values, morphospace):
+def get_overlaping_input_indices(p_map, slices):
     """
     Gets the inputs that are in the morphospace
     Parameters
     ----------
-    input_matrix : np.ndarray
-        matrix where each row is a flattened nifti image
-    corrected_p_values : np.ndarray
+    p_map : np.ndarray
         corrected p-values
-    morphospace : np.ndarray
+    slices : np.ndarray
         3D array of the 2D smoothed slices of corresponding to the embedded coordinates in the UMAP space
 
     Returns
@@ -227,14 +249,13 @@ def get_overlaping_input_indices(corrected_p_values, morphospace):
     """
     # for each 2D in the morphospace check which overlaps with the corrected p-values
     overlaping_inputs = []
-    for i in range(morphospace.shape[0]):
-        # if the slice of the morphospace overlaps with corrected_p_values, add i to overlaping_inputs
-        if np.sum(morphospace[i, :, :] * corrected_p_values) > 0:
+    for i in range(slices.shape[0]):
+        if np.nansum(slices[i, :, :] * p_map) > 0:
             overlaping_inputs.append(i)
     return overlaping_inputs
 
 
-def create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
+def old_create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
                        out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
                        stats_method='pearsonr', points_overlap_proportion_threshold=0.8,
                        **umap_param):
@@ -269,6 +290,7 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     if trained_umap is None:
         trained_umap = train_umap(input_matrix, **umap_param)
         joblib.dump(trained_umap, Path(output_folder).joinpath('trained_umap.sav'))
+        print(f'Trained UMAP model saved in {Path(output_folder).joinpath("trained_umap.sav")}')
     else:
         print('Using the provided trained UMAP model')
         trained_umap = joblib.load(trained_umap)
@@ -300,9 +322,11 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     # add 1 to the bounding box to account for the 0 index
     bounding_box += 1
     print(f'Min max rescaled coordinates in each dimension: ')
-    print(f'Min : {[np.min(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]}, Max: {[np.max(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]}')
+    print(
+        f'Min : {[np.min(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]}, Max: {[np.max(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]}')
     print(f'Min max rounded coordinates in each dimension: ')
-    print(f'Min : {[np.min(rescaled_coords_rounded[:, i]) for i in range(rescaled_coords_rounded.shape[1])]}, Max: {[np.max(rescaled_coords_rounded[:, i]) for i in range(rescaled_coords_rounded.shape[1])]}')
+    print(
+        f'Min : {[np.min(rescaled_coords_rounded[:, i]) for i in range(rescaled_coords_rounded.shape[1])]}, Max: {[np.max(rescaled_coords_rounded[:, i]) for i in range(rescaled_coords_rounded.shape[1])]}')
     print(f'bounding box: {bounding_box}')
     # get the 3D space
     morphospace = get_3d_space(rescaled_coords_rounded, bounding_box, filling_value)
@@ -316,7 +340,6 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     if points_coord.shape[0] < points_overlap_proportion_threshold * input_matrix.shape[0]:
         raise Warning(f'Less than {points_overlap_proportion_threshold} of the observations in input_matrix are '
                       f'in the morphospace. You might want to increase the number of cells in the output nd-grid')
-
 
     # """
     # Test with the euclidian distance of one selected point and the rest of the points.
@@ -347,8 +370,8 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     #     plt.imshow(sum_morphospace.T, origin='lower')
     #     plt.show()
 
-    morphospace = smooth_morphospace_points(morphospace, sigma, fwhm, mode='reflect')
-    sum_morphospace = np.sum(morphospace, axis=0)
+    smoothed_morphospace = smooth_morphospace_points(morphospace, sigma, fwhm, mode='reflect')
+    sum_morphospace = np.sum(smoothed_morphospace, axis=0)
     # save sum_morphospace as  nifti
     sum_morphospace_nii = nib.Nifti1Image(sum_morphospace, np.eye(4))
     nib.save(sum_morphospace_nii, 'sum_morphospace.nii.gz')
@@ -363,8 +386,7 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
         raise ValueError(f'len(dependent_variable) must be equal to the number of columns of the input matrix')
 
     # dependent_variable = distance_from_selected_point.flatten()
-
-    heatmaps = compute_heatmap(morphospace, dependent_variable, method=stats_method)
+    heatmaps = compute_heatmap(smoothed_morphospace, dependent_variable, method=stats_method)
     # plot the heatmaps, heatmaps[0] is the correlation coefficient, heatmaps[1] is the p-value
     if show == -1 or 5 in show:
         plt.imshow(heatmaps[0].T, origin='lower')
@@ -372,6 +394,11 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
         plt.colorbar()
         plt.show()
     if show == -1 or 6 in show:
+        thresholded = True
+        if thresholded:
+            # threshold the heatmap to only keep the significant correlations (p < 0.05)
+            heatmaps[0][heatmaps[1] >= 0.05] = np.nan
+            print(f'Number of significant correlations (before correction): {np.sum(heatmaps[1] < 0.05)}')
         plt.imshow(heatmaps[1].T, origin='lower')
         # with a colourbar
         plt.colorbar()
@@ -379,8 +406,10 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
     # statsmodels.stats.multitest.multipletests(pvals, alpha=0.05, method='hs', maxiter=1, is_sorted=False,
     #                                           returnsorted=False)
     # use fdr_bh method to correct for multiple comparisons the p-values and then plot the heatmap
-    methods = ['bonferroni', 'sidak', 'holm-sidak', 'holm', 'simes-hochberg', 'hommel', 'fdr_bh', 'fdr_by',
-               'fdr_tsbh', 'fdr_tsbky']
+    # methods = ['bonferroni', 'sidak', 'holm-sidak', 'holm', 'simes-hochberg', 'hommel', 'fdr_bh', 'fdr_by',
+    #            'fdr_tsbh', 'fdr_tsbky']
+    methods = ['holm']
+    corrected_p_maps = {}
     for m in methods:
         corrected_p_values = smm.multipletests(heatmaps[1].flatten(), alpha=0.05, method=m, maxiter=-1)
         # if corrected_p_values doesn't contain anything between 0 < p < 0.05 skip the method
@@ -391,7 +420,9 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
         # threshold the corrected p-values to only keep the significant ones (< 0.05)
         corrected_p_values[corrected_p_values >= 0.05] = np.nan
 
-        correlated_input_indices = get_overlaping_input_indices(corrected_p_values, morphospace)
+        corrected_p_maps[m] = corrected_p_values
+
+        correlated_input_indices = get_overlaping_input_indices(corrected_p_values, smoothed_morphospace)
         print(f'Indices of correlated inputs: {correlated_input_indices}')
 
         plt.imshow(corrected_p_values.T, origin='lower')
@@ -400,5 +431,182 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
 
         plt.title(f'Corrected p-values using the {m} method')
         plt.show()
-    return heatmaps
+    return morphospace, corrected_p_maps, smoothed_morphospace
 
+
+def create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
+                       out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
+                       stats_method='pearsonr', points_overlap_proportion_threshold=0.8,
+                       **umap_param):
+
+    mpl.rcParams['image.cmap'] = 'hsv'
+
+    if not Path(output_folder).is_dir():
+        Path(output_folder).mkdir(parents=True)
+
+    # first we train the UMAP model
+    if trained_umap is None:
+        trained_umap = train_umap(input_matrix, **umap_param)
+        joblib.dump(trained_umap, Path(output_folder).joinpath('trained_umap.sav'))
+        print(f'Trained UMAP model saved in {Path(output_folder).joinpath("trained_umap.sav")}')
+    else:
+        # if trained_umap is a path load it, otherwise assume it is a trained UMAP model
+        if isinstance(trained_umap, os.PathLike):
+            print('Using the provided trained UMAP model')
+            trained_umap = joblib.load(trained_umap)
+
+    # then we transform the input matrix into the UMAP space
+    orig_umap_space = trained_umap.transform(input_matrix)
+    print('Input matrix transformed into the UMAP space')
+    # recenter the x and y coordinates to 0
+    orig_umap_space -= np.min(orig_umap_space, axis=0)
+    # plot the space
+    if show == -1 or 1 in show:
+        plt.scatter(orig_umap_space[:, 0], orig_umap_space[:, 1], cmap='Spectral', s=20)
+        plt.title('UMAP space')
+        plt.show()
+    # then we rescale the coordinates to the output nd-grid
+    rescaled_coords, scaling_factor = rescale_morphostace_coord(
+        input_matrix, trained_umap, out_cell_nb)
+    # round the coordinates
+    rescaled_coords_rounded = np.round(rescaled_coords).astype(int)
+    # plot
+    if show == -1 or 2 in show:
+        plt.scatter(rescaled_coords_rounded[:, 0], rescaled_coords_rounded[:, 1], cmap='Spectral', s=20)
+        plt.title('Rescaled coordinates')
+        plt.show()
+    # the bounding box is the maximum coordinates rounded up in each dimension of rescaled_coords
+    bounding_box = [np.max(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]
+    bounding_box = np.array(bounding_box).astype(int)
+    # add 1 to the bounding box to account for the 0 index
+    bounding_box += 1
+    # get the 3D space
+    print('Creating the stacked 2D slices of the morphospace')
+    slices = get_3d_space(rescaled_coords_rounded, bounding_box, filling_value)
+    slices_nii = nib.Nifti1Image(slices, np.eye(4))
+    nib.save(slices_nii, Path(output_folder, 'slices.nii.gz'))
+    print(f'morphospace shape: {slices.shape}')
+    # display scatter plot of the slices' sum
+    sum_slices = np.sum(slices, axis=0)
+    points_coord = np.argwhere(sum_slices > 0)
+    print(f'points_coord.shape: {points_coord.shape}')
+    # if the first dimension of the points_coord is less than points_overlap_proportion_threshold of
+    # the number observations in input_matrix, then throw a warning (very visible)
+    if points_coord.shape[0] < points_overlap_proportion_threshold * input_matrix.shape[0]:
+        raise Warning(f'Less than {points_overlap_proportion_threshold} of the observations in input_matrix are '
+                      f'in the morphospace. You might want to increase the number of cells in the output nd-grid')
+    if show == -1 or 3 in show:
+        plt.scatter(points_coord[:, 0], points_coord[:, 1], cmap='Spectral', s=20)
+        plt.title('Sum of the slices')
+        plt.show()
+    smoothed_slices = smooth_morphospace_points(slices, sigma, fwhm, mode='reflect')
+    sum_smoothed_slices = np.sum(smoothed_slices, axis=0)
+    print(f'smoothed_slices.shape: {smoothed_slices.shape}')
+    # plot sum_smoothed_slices
+    if show == -1 or 4 in show:
+        plt.imshow(sum_smoothed_slices.T, origin='lower')
+        plt.title('Sum of the smoothed slices')
+        plt.show()
+    # save sum_morphospace as  nifti
+    smoothed_slices_nii = nib.Nifti1Image(smoothed_slices, np.eye(4))
+    nib.save(smoothed_slices_nii, Path(output_folder, 'smoothed_slices.nii.gz'))
+
+    # len of dependent variable must be equal to the number of columns of the input matrix
+    print(f'len(dependent_variable): {len(dependent_variable)}')
+    print(f'input_matrix.shape: {input_matrix.shape}')
+    if len(dependent_variable) != input_matrix.shape[0]:
+        raise ValueError(f'len(dependent_variable) must be equal to the number of columns of the input matrix')
+        # dependent_variable = distance_from_selected_point.flatten()
+    heatmaps = compute_heatmap(smoothed_slices, dependent_variable, method=stats_method)
+    # plot the heatmaps, heatmaps[0] is the correlation coefficient, heatmaps[1] is the p-value
+    if show == -1 or 5 in show:
+        plt.imshow(heatmaps[0].T, origin='lower')
+        # with a colourbar
+        plt.colorbar()
+        plt.title('Correlation coefficient')
+        plt.show()
+        # threshold the heatmap[0] at -0.3 and under
+        heatmaps[0][heatmaps[0] > -0.3] = np.nan
+        plt.imshow(heatmaps[0].T, origin='lower')
+        # with a colourbar
+        plt.colorbar()
+        plt.title('Correlation coefficient thresholded at -0.3')
+        plt.show()
+
+    if show == -1 or 6 in show:
+        thresholded = True
+        if thresholded:
+            # threshold the heatmap to only keep the significant correlations (p < 0.05)
+            heatmaps[1][heatmaps[1] >= 0.05] = np.nan
+        # save heatmaps[1] as  nifti
+        heatmaps_nii = nib.Nifti1Image(np.array(heatmaps[1]), np.eye(4))
+        nib.save(heatmaps_nii, Path(output_folder, 'p_values.nii.gz'))
+        # save slice 1 as nifti
+        slice_1_nii = nib.Nifti1Image(smoothed_slices[1, :, :], np.eye(4))
+        nib.save(slice_1_nii, Path(output_folder, 'slice_1.nii.gz'))
+
+        # save slice 10 as nifti
+        slice_10_nii = nib.Nifti1Image(smoothed_slices[10, :, :], np.eye(4))
+        nib.save(slice_10_nii, Path(output_folder, 'slice_10.nii.gz'))
+
+        correlated_input_indices = get_overlaping_input_indices(heatmaps[1], smoothed_slices)
+        print(f'Indices of correlated (uncorrected) inputs: {correlated_input_indices}')
+
+        # show the points from correlated_input_indices these are the indices in
+        # rescaled_coords_rounded
+        # create a heatmap with these coordinates to plot it with imshow
+        correlated_points_heatmap = np.zeros((bounding_box[0], bounding_box[1]))
+        for i in correlated_input_indices:
+            print(f'Correlated point {i}: {rescaled_coords_rounded[i, :]}')
+            correlated_points_heatmap[rescaled_coords_rounded[i, 0], rescaled_coords_rounded[i, 1]] = 1
+        mpl.rcParams['image.cmap'] = 'autumn'
+        plt.imshow(correlated_points_heatmap.T, origin='lower')
+
+        plt.colorbar()
+        plt.title('Points from correlated_input_indices')
+        plt.show()
+        # mpl.rcParams['image.cmap'] = 'hsv'
+        plt.imshow(heatmaps[1].T, origin='lower')
+        # with a colourbar
+        plt.colorbar()
+        plt.title('p-values')
+        plt.show()
+
+    scores_heatmap = compute_scores_heatmap(smoothed_slices, dependent_variable)
+    print(f'scores_heatmap.shape: {scores_heatmap.shape}')
+    # save scores_heatmap as  nifti
+    scores_heatmap_nii = nib.Nifti1Image(scores_heatmap, np.eye(4))
+    nib.save(scores_heatmap_nii, Path(output_folder, 'scores_heatmap.nii.gz'))
+    # plot sum of scores_heatmap
+    sum_scores_heatmap = np.sum(scores_heatmap, axis=0)
+    print(f'sum_scores_heatmap.shape: {sum_scores_heatmap.shape}')
+    if show == -1 or 7 in show:
+        plt.imshow(sum_scores_heatmap.T, origin='lower')
+        plt.title('Sum of the scores heatmap')
+        plt.colorbar()
+        plt.show()
+
+    methods = ['holm']
+    corrected_p_maps = {}
+    for m in methods:
+        corrected_p_values = smm.multipletests(heatmaps[1].flatten(), alpha=0.05, method=m, maxiter=-1)
+        # if corrected_p_values doesn't contain anything between 0 < p < 0.05 skip the method
+        if np.sum(corrected_p_values[1] < 0.05) == 0:
+            print(f'No p-values between 0 and 0.05 using the {m} method')
+            continue
+        corrected_p_values = corrected_p_values[1].reshape(heatmaps[1].shape)
+        # threshold the corrected p-values to only keep the significant ones (< 0.05)
+        corrected_p_values[corrected_p_values >= 0.05] = np.nan
+
+        corrected_p_maps[m] = corrected_p_values
+
+        correlated_input_indices = get_overlaping_input_indices(corrected_p_values, smoothed_slices)
+        print(f'Indices of correlated inputs: {correlated_input_indices}')
+
+        plt.imshow(corrected_p_values.T, origin='lower')
+        # add a colorbard with hot colours for the significant p-values
+        plt.colorbar()
+
+        plt.title(f'Corrected p-values using the {m} method')
+        plt.show()
+    return slices, smoothed_slices, sum_smoothed_slices, correlated_input_indices
