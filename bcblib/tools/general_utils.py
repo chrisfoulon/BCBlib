@@ -19,6 +19,19 @@ def save_list(path, li):
 
 
 def split_dict(d, chunk_size, output_dir=None, output_pref=None):
+    """
+    Split a dictionary into chunks of a given size and save them to disk.
+    Parameters
+    ----------
+    d
+    chunk_size
+    output_dir
+    output_pref
+
+    Returns
+    -------
+
+    """
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True)

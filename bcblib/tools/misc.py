@@ -1,7 +1,9 @@
 from collections import defaultdict
 import random
+from tqdm import tqdm
 
 import numpy as np
+from tqdm import tqdm
 
 from bcblib.tools.general_utils import open_json
 from scipy.stats import kruskal
@@ -12,7 +14,7 @@ def create_balanced_split(info_dict_keys, info_dict, num_splits=5):
     bilat_offset = 2
     for k in info_dict_keys:
         clu_name = info_dict[k]['lesion_cluster']
-        if clu_name == 'outside_clusters':
+        if clu_name == 'outside_clusters' or clu_name == 'empty_prediction':
             cluster_dict[clu_name].append(k)
         else:
             cluster_dict[clu_name[bilat_offset:]].append(k)
@@ -95,7 +97,7 @@ def permutation_balanced_splits(info_dict_keys, info_dict, num_permutations):
     best_st = 0
     best_splits = None
 
-    for perm in range(num_permutations):
+    for perm in tqdm(range(num_permutations)):
         random.shuffle(info_dict_keys)
         split_dict, mean_splits, std_splits, st, pval = create_balanced_split(info_dict_keys, info_dict)
         means_range = (np.max(mean_splits) - np.min(mean_splits))

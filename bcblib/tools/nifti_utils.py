@@ -428,3 +428,41 @@ def has_big_enough_cluster(img, min_cluster_size=4):
     data = data.get_fdata()
     max_cluster_size = np.max([np.count_nonzero(data[..., i]) for i in range(data.shape[-1])])
     return max_cluster_size >= min_cluster_size
+
+
+def get_volume(img, ratio=False, threshold=0):
+    if not ratio:
+        # volume of voxels with > threshold
+        data = load_nifti(img).get_fdata()
+        return np.count_nonzero(data > threshold)
+    else:
+        # ratio of voxels with > threshold by the total number of voxels
+        data = load_nifti(img).get_fdata()
+        return np.count_nonzero(data > threshold) / np.prod(data.shape)
+
+
+def get_dispersion(img):
+    nii = load_nifti(img)
+    # zeros to non-zero values ratios
+    data = nii.get_fdata()
+    zero_nonzero_ratio = np.count_nonzero(data) / np.prod(data.shape)
+    mean_to_median_ratio = np.mean(data) / np.median(data)
+    """
+    Returns:
+
+    regions_extracted_imgnibabel.nifti1.Nifti1Image
+
+        Gives the image in 4D of extracted brain regions. Each 3D image consists of only one separated region.
+    index_of_each_mapnumpy.ndarray
+
+        An array of list of indices where each index denotes the identity of each extracted region to their family of brain maps.
+
+    """
+    clusters_4d, cluster_indices = connected_regions(nii, min_region_size=1, extract_type='connected_components', fwhm=0)
+    clusters_4d = clusters_4d.get_fdata()
+    mean_cluster_size = np.mean([np.count_nonzero(clusters_4d[..., i]) for i in range(clusters_4d.shape[-1])])
+    # distance between the centre of mass of every cluster to the centre (coordinate) of the image
+    centre_of_image = np.array(nii.shape) / 2
+    # TODO
+    # mean_distance_to_center =
+    # return zero_nonzero_ratio, mean_to_median_ratio, mean_cluster_size, distance_to_center
