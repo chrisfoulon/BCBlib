@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import nibabel as nib
 from matplotlib import pyplot as plt
+import seaborn as sns
+
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 from bcblib.tools.nifti_utils import is_nifti, get_centre_of_mass
@@ -774,7 +776,7 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
     mapping scalar names to such functions. Defaults to None.
 
     Returns:
-    dict or None: A dictionary containing the best values for each fold if best_func is used or the scalar values at the
+    dict: A dictionary containing the best values for each fold if best_func is used or the scalar values at the
     best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function returns
     {}.
 
@@ -782,7 +784,11 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
     ValueError: If an EventAccumulator object does not contain the scalar.
     """
     sorted_fold_names = sorted(fold_data.keys(), key=lambda x: int(x.split('_')[1]))
-    best_values_dict = {}
+    best_epochs_dict = {}
+    plot_params_dict = {}
+    marker_params_dict = {}
+    # TODO use this colormap for the curves AND the markers
+    cmap = sns.color_palette("Set2")
 
     for fold_name in sorted_fold_names:
         event_acc = fold_data[fold_name]
@@ -791,22 +797,51 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
 
         x, y = zip(*[(s.step, s.value) for s in event_acc.Scalars(scalar_name)])
 
-        if best_func is not None:
+        fold_label = fold_name
+        markers_created = False
+        marker_colour = 'k'
+        marker_type = '*'
+        marker_size = 5
+        plot_marker_param = None
+        if best_epochs is not None and fold_name in best_epochs:
+            best_epoch_provided = best_epochs[fold_name]
+            if best_epoch_provided in x:
+                best_value_provided = y[x.index(best_epoch_provided)]
+                # store marker parameters for later use
+                plot_marker_param = (best_epoch_provided, best_value_provided, marker_colour, marker_type,
+                                     marker_size)
+                # plt.plot(best_epoch_provided, best_value_provided, marker_colour + marker_type,
+                #          markersize=marker_size)
+                fold_label += f', best model at {best_epoch_provided}: {best_value_provided:.4f}'
+                markers_created = True
+                best_epochs_dict[fold_name] = best_epoch_provided
+            else:
+                print(f"Warning: Best epoch {best_epoch_provided} not found in epochs for fold {fold_name}. Skipping.")
+
+        if best_func is not None and not markers_created:
             best_func_scalar = best_func[scalar_name] if isinstance(best_func, dict) else best_func
             best_value = best_func_scalar(y)
             best_epoch = x[y.index(best_value)]
-            plt.plot(best_epoch, best_value, 'ro')
-            fold_name += f', best at {best_epoch}: {best_value:.4f}'
-            best_values_dict[fold_name] = best_value
+            # store marker parameters for later use
+            plot_marker_param = (best_epoch, best_value, marker_colour, marker_type, marker_size)
+            # plt.plot(best_epoch, best_value, marker_colour + marker_type,
+            #          markersize=marker_size)
+            fold_label += f', best at {best_epoch}: {best_value:.4f}'
+            best_epochs_dict[fold_name] = best_epoch
 
-        if best_epochs is not None and fold_name in best_epochs:
-            best_epoch_provided = best_epochs[fold_name]
-            best_value_provided = y[x.index(best_epoch_provided)]
-            plt.plot(best_epoch_provided, best_value_provided, 'ro')
-            best_values_dict[fold_name] = best_value_provided
-
-        plt.plot(x, y, label=fold_name)
-
+        plot_params_dict[fold_name] = (x, y, fold_label)
+        # plt.plot(x, y, label=fold_label)
+        if plot_marker_param is not None:
+            marker_params_dict[fold_name] = plot_marker_param
+            # plt.plot(*plot_marker_param[:2], plot_marker_param[2] + plot_marker_param[3],
+            #          markersize=plot_marker_param[4])
+    for fold_name in sorted_fold_names:
+        x, y, fold_label = plot_params_dict[fold_name]
+        plt.plot(x, y, label=fold_label)
+    for fold_name in sorted_fold_names:
+        if fold_name in marker_params_dict:
+            plt.plot(*marker_params_dict[fold_name][:2], marker_params_dict[fold_name][2] + marker_params_dict[fold_name][3],
+                     markersize=marker_params_dict[fold_name][4])
     plt.xlabel('Epoch')
     plt.ylabel(scalar_name)
     plt.legend()
@@ -823,4 +858,4 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
 
     plt.close()
 
-    return best_values_dict
+    return best_epochs_dict
