@@ -739,7 +739,7 @@ def load_all_event_files(model_folder):
     return fold_data
 
 
-def plot_scalar_per_fold(fold_data, scalar_name, output_path=None, display_plot=True, best_func=None):
+def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=None, display_plot=True, best_func=None):
     """
     Plot the values of a scalar per fold and optionally save the plot to a file.
 
@@ -752,21 +752,37 @@ def plot_scalar_per_fold(fold_data, scalar_name, output_path=None, display_plot=
     directory.
 
     If best_func is provided, the function will compute the best value for each scalar, signal it with a red dot on the
-    plot, and print the best value and the epoch number of the best value next to the fold name in the legend.
+    plot, and print the best value and the epoch number of the best value next to the fold name in the legend. The best
+    values for each fold are stored in a dictionary.
+
+    If best_epochs is provided, the function will plot a red dot at the epoch number provided for each fold. The scalar
+    values at the best epochs for each fold are stored in a dictionary.
+
+    The function returns a dictionary containing the best values for each fold if best_func is used or the scalar values
+    at the best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function
+    returns None.
 
     Parameters:
     fold_data (dict): A dictionary where the keys are the fold names and the values are the EventAccumulator objects.
     scalar_name (str): The name of a scalar.
+    best_epochs (dict, optional): A dictionary where the keys are the fold names and the values are the epoch numbers
+        where the best values occur. Defaults to None.
     output_path (str, optional): The path where the plot will be saved. If this is a directory, the plot will be saved
         as scalar_name_folds_plot.png in this directory. Defaults to None.
     display_plot (bool, optional): Whether to display the plot. Defaults to True.
-    best_func (function or dict, optional): A function to compute the best value for each scalar, or a dictionary mapping
-        scalar names to such functions. Defaults to None.
+    best_func (function or dict, optional): A function to compute the best value for each scalar, or a dictionary
+    mapping scalar names to such functions. Defaults to None.
+
+    Returns:
+    dict or None: A dictionary containing the best values for each fold if best_func is used or the scalar values at the
+    best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function returns
+    {}.
 
     Raises:
     ValueError: If an EventAccumulator object does not contain the scalar.
     """
     sorted_fold_names = sorted(fold_data.keys(), key=lambda x: int(x.split('_')[1]))
+    best_values_dict = {}
 
     for fold_name in sorted_fold_names:
         event_acc = fold_data[fold_name]
@@ -781,6 +797,13 @@ def plot_scalar_per_fold(fold_data, scalar_name, output_path=None, display_plot=
             best_epoch = x[y.index(best_value)]
             plt.plot(best_epoch, best_value, 'ro')
             fold_name += f', best at {best_epoch}: {best_value:.4f}'
+            best_values_dict[fold_name] = best_value
+
+        if best_epochs is not None and fold_name in best_epochs:
+            best_epoch_provided = best_epochs[fold_name]
+            best_value_provided = y[x.index(best_epoch_provided)]
+            plt.plot(best_epoch_provided, best_value_provided, 'ro')
+            best_values_dict[fold_name] = best_value_provided
 
         plt.plot(x, y, label=fold_name)
 
@@ -799,3 +822,5 @@ def plot_scalar_per_fold(fold_data, scalar_name, output_path=None, display_plot=
         plt.show()
 
     plt.close()
+
+    return best_values_dict
