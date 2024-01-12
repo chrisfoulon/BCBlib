@@ -10,6 +10,11 @@ import random
 import numpy as np
 import pandas as pd
 import nibabel as nib
+from matplotlib import pyplot as plt
+import seaborn as sns
+
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
 from bcblib.tools.nifti_utils import is_nifti, get_centre_of_mass
 from bcblib.tools.general_utils import open_json, save_json
 
@@ -659,3 +664,192 @@ def rate_two_segmentations(seg_dict, output_path, images_root='', label_dict_pat
         save_json(output_path, output_dict)
         raise e
     return output_dict
+
+
+def load_tensorboard_file(event_file, verbose=False):
+    # Load the TensorBoard file
+    event_acc = EventAccumulator(event_file)
+    event_acc.Reload()
+
+    # If verbose is True, print all the tags from the file
+    if verbose:
+        print("Tags:")
+        for tag in event_acc.Tags()['scalars']:
+            print(tag)
+
+    return event_acc
+
+
+def create_and_save_plots(event_acc, best_func_dict=None, output_folder=None, display_plot=True):
+    # Get the list of scalar tags
+    scalar_tags = event_acc.Tags()['scalars']
+
+    # If best_func_dict is not provided, use a default function (min) for all tags
+    if best_func_dict is None:
+        best_func_dict = {tag: min for tag in scalar_tags}
+
+    # Create and save a plot for each tag
+    for tag in scalar_tags:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        x, y = zip(*[(s.step, s.value) for s in event_acc.Scalars(tag)])
+        ax.plot(x, y)
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel(tag)
+        # Find the best value
+        best_value_func = best_func_dict.get(tag, min)  # Use min if the tag is not in best_func_dict
+        best_value = best_value_func(y)
+        best_epoch = x[y.index(best_value)]
+        ax.plot(best_epoch, best_value, 'ro')
+        ax.set_title(f'Best value: {best_value:.4f}')
+        plt.tight_layout()
+        # Save the plot if output_folder is provided
+        if output_folder is not None:
+            plt.savefig(output_folder / f'{tag}.png')
+        # Display the plot if display_plot is True
+        if display_plot:
+            plt.show()
+        plt.close(fig)  # Close the figure
+
+
+def load_all_event_files(model_folder):
+    """
+    Load the latest event file from each subfolder in the given model folder.
+
+    This function iterates over each subfolder in the model folder, finds the latest event file in each subfolder,
+    and loads the data from these event files using the `load_tensorboard_file` function. The data from each event file
+    is stored in a dictionary where the keys are the fold names (subfolder names) and the values are the EventAccumulator
+    objects returned by `load_tensorboard_file`. This dictionary is returned by the function.
+
+    Parameters:
+    model_folder (str): The path to the model folder containing the subfolders with event files.
+
+    Returns:
+    dict: A dictionary where the keys are the fold names and the values are the EventAccumulator objects containing the
+    data from the latest event file in each subfolder.
+    """
+    model_folder = Path(model_folder)
+    fold_data = {}
+
+    for fold_folder in model_folder.iterdir():
+        if fold_folder.is_dir():
+            event_files = list(fold_folder.rglob('events.out.tfevents.*'))
+            if event_files:
+                latest_event_file = max(event_files, key=os.path.getmtime)
+                event_acc = load_tensorboard_file(str(latest_event_file))
+                fold_data[fold_folder.name] = event_acc
+
+    return fold_data
+
+
+def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=None, display_plot=True, best_func=None):
+    """
+    Plot the values of a scalar per fold and optionally save the plot to a file.
+
+    This function iterates over the items in fold_data. For each item, the key is the fold name and the value is the
+    EventAccumulator object. It checks if the EventAccumulator object contains the scalar. If it does, it gets the
+    values of the scalar and plots these values. The fold name is used as the label for the plot.
+
+    If output_path is provided, the function will save the plot to the specified path. If output_path is a directory,
+    the function will create the directory if it doesn't exist and save the plot as scalar_name_folds_plot.png in that
+    directory.
+
+    If best_func is provided, the function will compute the best value for each scalar, signal it with a red dot on the
+    plot, and print the best value and the epoch number of the best value next to the fold name in the legend. The best
+    values for each fold are stored in a dictionary.
+
+    If best_epochs is provided, the function will plot a red dot at the epoch number provided for each fold. The scalar
+    values at the best epochs for each fold are stored in a dictionary.
+
+    The function returns a dictionary containing the best values for each fold if best_func is used or the scalar values
+    at the best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function
+    returns None.
+
+    Parameters:
+    fold_data (dict): A dictionary where the keys are the fold names and the values are the EventAccumulator objects.
+    scalar_name (str): The name of a scalar.
+    best_epochs (dict, optional): A dictionary where the keys are the fold names and the values are the epoch numbers
+        where the best values occur. Defaults to None.
+    output_path (str, optional): The path where the plot will be saved. If this is a directory, the plot will be saved
+        as scalar_name_folds_plot.png in this directory. Defaults to None.
+    display_plot (bool, optional): Whether to display the plot. Defaults to True.
+    best_func (function or dict, optional): A function to compute the best value for each scalar, or a dictionary
+    mapping scalar names to such functions. Defaults to None.
+
+    Returns:
+    dict: A dictionary containing the best values for each fold if best_func is used or the scalar values at the
+    best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function returns
+    {}.
+
+    Raises:
+    ValueError: If an EventAccumulator object does not contain the scalar.
+    """
+    sorted_fold_names = sorted(fold_data.keys(), key=lambda x: int(x.split('_')[1]))
+    best_epochs_dict = {}
+    plot_params_dict = {}
+    marker_params_dict = {}
+    cmap = sns.color_palette("muted")
+    for fold_index, fold_name in enumerate(sorted_fold_names):
+        event_acc = fold_data[fold_name]
+        if scalar_name not in event_acc.Tags()['scalars']:
+            raise ValueError(f"The scalar '{scalar_name}' is not found in the fold '{fold_name}'.")
+
+        x, y = zip(*[(s.step, s.value) for s in event_acc.Scalars(scalar_name)])
+
+        fold_label = fold_name
+        markers_created = False
+        marker_colour = cmap[fold_index % len(cmap)]
+        marker_type = 'o'
+        marker_size = 5
+        plot_marker_param = None
+        if best_epochs is not None and fold_name in best_epochs:
+            best_epoch_provided = best_epochs[fold_name]
+            if best_epoch_provided in x:
+                best_value_provided = y[x.index(best_epoch_provided)]
+                # store marker parameters for later use
+                plot_marker_param = (best_epoch_provided, best_value_provided, marker_colour, marker_type,
+                                     marker_size)
+                fold_label += f', best model at {best_epoch_provided}: {best_value_provided:.4f}'
+                markers_created = True
+                best_epochs_dict[fold_name] = best_epoch_provided
+            else:
+                print(f"Warning: Best epoch {best_epoch_provided} not found in epochs for fold {fold_name}. Skipping.")
+
+        if best_func is not None and not markers_created:
+            best_func_scalar = best_func[scalar_name] if isinstance(best_func, dict) else best_func
+            best_value = best_func_scalar(y)
+            best_epoch = x[y.index(best_value)]
+            # store marker parameters for later use
+            plot_marker_param = (best_epoch, best_value, marker_colour, marker_type, marker_size)
+            fold_label += f', best at {best_epoch}: {best_value:.4f}'
+            best_epochs_dict[fold_name] = best_epoch
+
+        plot_params_dict[fold_name] = (x, y, fold_label, marker_colour)
+        if plot_marker_param is not None:
+            marker_params_dict[fold_name] = plot_marker_param
+
+    for fold_name in sorted_fold_names:
+        x, y, fold_label, colour = plot_params_dict[fold_name]
+        plt.plot(x, y, label=fold_label, color=colour)
+
+    for fold_name in sorted_fold_names:
+        if fold_name in marker_params_dict:
+            plt.plot(*marker_params_dict[fold_name][:2], color=marker_params_dict[fold_name][2],
+                     marker=marker_params_dict[fold_name][3],
+                     markersize=marker_params_dict[fold_name][4], markeredgewidth=1, markeredgecolor='black')
+    plt.xlabel('Epoch')
+    plt.ylabel(scalar_name)
+    plt.legend()
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        if output_path.is_dir():
+            output_path.mkdir(parents=True, exist_ok=True)
+            output_path = output_path / f'{scalar_name}_folds_plot.png'
+        plt.savefig(output_path)
+
+    if display_plot:
+        plt.show()
+
+    plt.close()
+
+    return best_epochs_dict
