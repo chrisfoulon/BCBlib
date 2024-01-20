@@ -1,13 +1,20 @@
 import argparse
 import os
+from collections import defaultdict
 from pathlib import Path
 
+import nibabel as nib
+import numpy as np
 from bcblib.tools.spreadsheet_io_utils import import_spreadsheet, str_to_column_id
-from bcblib.tools.nifti_utils import is_nifti, file_to_list
+from bcblib.tools.nifti_utils import is_nifti, file_to_list, load_nifti
 
 
 def anacom2():
-    desc = "Helper function to create a design matrix and 4D image to input to fsl randomise"
+    """
+    Main function of the anacom2 script
+
+    """
+    desc = "AnaCOM2: cluster based lesion symptom analysis"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('output_dir', type=str, required=True,
                         help='Path to the output directory (created if not existing)')
@@ -57,7 +64,6 @@ def anacom2():
         filename_col = str_to_column_id(args.filename_col, patient_df)
     else:
         filename_col = patient_df.columns[args.filename_col]
-        #     TODO verify all the patients are in the folder
     filename_series = patient_df[filename_col].iloc[score_series].dropna()
     print(f'{len(filename_series)} usable patient filenames corresponding to the scores found in column {filename_col}')
     filename_series_fnames = [Path(p).name for p in filename_series]
@@ -70,6 +76,21 @@ def anacom2():
                     raise ValueError(f'{path} is not an existing file')
         if not found:
             raise ValueError(f'{filename} could not be matched with any file in the images list')
+
+    # get all the file paths associated with the filenames in filename_series
+    # check that all the files exist
+    # check that all the files have the same resolution and orientation
+    for path in images:
+        if not Path(path).is_file():
+            raise ValueError(f'{path} is not an existing file')
+    first_affine = None
+    # The affine can be obtained with nibabel.load(path).affine
+    for path in images:
+        if first_affine is None:
+            first_affine = load_nifti(path).affine
+        else:
+            if not np.allclose(first_affine, load_nifti(path).affine):
+                raise ValueError(f'{path} does not have the same affine as the first file')
 
     if args.control_scores is not None:
         if args.control_header:
@@ -91,3 +112,34 @@ def anacom2():
     else:
         control_scores = args.control_mean
         print(f'Mean score for the controls: {control_scores}')
+    """
+    Summarise what is done here and explain the content of each variable (write it in comments)
+    
+    1. Create the output directory if it does not exist
+    2. Check that the images are either a folder containing niftis or a file containing the list of image paths
+    3. Import the patient scores
+    4. Check that the patient scores are usable
+    5. Check that the patient filenames are usable
+    6. Import the control scores
+    7. Check that the control scores are usable
+    8. Summarise what is done    
+    """
+    # Make a patient img : patient score dictionary
+    patient_dict = dict(zip(filename_series_fnames, score_series))
+    print(f'{len(patient_dict)} patient scores found in the spreadsheet')
+    # print first key and value of the dictionary
+    print(f'First key: {list(patient_dict.keys())[0]}')
+    coord_dict = defaultdict(list)
+
+    for ind, path in enumerate(patient_dict):
+        img_path = Path(path)
+        hdr = load_nifti(img_path)
+        data = hdr.get_fdata()
+        coord_data = np.argwhere(data)
+        for coord in coord_data:
+            coord_dict[coord].append(patient_dict[path])
+        # Now we create the clusters
+        score_clusters_coord_dict = defaultdict(list)
+        #TODO Make the clusters uniquer (they might not be with just the scrores)
+        for coord, scores in coord_dict.items():
+            score_cluster = []
