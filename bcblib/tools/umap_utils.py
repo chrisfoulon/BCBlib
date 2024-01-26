@@ -9,6 +9,7 @@ import joblib
 import umap
 import matplotlib as mpl
 from matplotlib import pyplot as plt
+from numpy.linalg import svd
 from scipy.ndimage import gaussian_filter
 from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 import statsmodels.stats.multitest as smm
@@ -456,3 +457,34 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
                     bbox_inches='tight')
         plt.show()
     return slices, smoothed_slices, sum_smoothed_slices, correlated_input_indices
+
+
+def align_embeddings(embedding1, embedding2):
+    # work on copies of the embeddings
+    embedding1 = embedding1.copy()
+    embedding2 = embedding2.copy()
+    # Translate the embeddings
+    center_of_mass1 = np.mean(embedding1, axis=0)
+    center_of_mass2 = np.mean(embedding2, axis=0)
+    embedding1 -= center_of_mass1
+    embedding2 -= center_of_mass2
+
+    # Scale the embeddings
+    average_norm1 = np.mean(np.linalg.norm(embedding1, axis=1))
+    average_norm2 = np.mean(np.linalg.norm(embedding2, axis=1))
+    embedding1 /= average_norm1
+    embedding2 /= average_norm2
+
+    # Compute the matrix product of the first embedding and the second embedding transposed
+    matrix_product = np.dot(embedding1.T, embedding2)
+
+    # Perform a singular value decomposition on this matrix product
+    u, _, vt = svd(matrix_product)
+
+    # Compute the rotation matrix
+    rotation_matrix = np.dot(vt.T, u.T)
+
+    # Rotate the first embedding
+    rotated_embedding1 = np.dot(embedding1, rotation_matrix)
+
+    return rotated_embedding1, embedding2

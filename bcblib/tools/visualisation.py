@@ -741,7 +741,8 @@ def load_all_event_files(model_folder):
     return fold_data
 
 
-def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=None, display_plot=True, best_func=None):
+def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=None,
+                         display_plot=True, best_func=None, display_names_dict=None, output_prefix=None):
     """
     Plot the values of a scalar per fold and optionally save the plot to a file.
 
@@ -774,6 +775,8 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
     display_plot (bool, optional): Whether to display the plot. Defaults to True.
     best_func (function or dict, optional): A function to compute the best value for each scalar, or a dictionary
     mapping scalar names to such functions. Defaults to None.
+    display_names_dict (dict, optional): A dictionary mapping scalar names to names to be displayed on the plot.
+    output_prefix (str, optional): A reference to be added to the output path. Defaults to None.
 
     Returns:
     dict: A dictionary containing the best values for each fold if best_func is used or the scalar values at the
@@ -783,6 +786,8 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
     Raises:
     ValueError: If an EventAccumulator object does not contain the scalar.
     """
+    if display_names_dict is None:
+        display_names_dict = {}
     sorted_fold_names = sorted(fold_data.keys(), key=lambda x: int(x.split('_')[1]))
     best_epochs_dict = {}
     plot_params_dict = {}
@@ -837,14 +842,20 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
                      marker=marker_params_dict[fold_name][3],
                      markersize=marker_params_dict[fold_name][4], markeredgewidth=1, markeredgecolor='black')
     plt.xlabel('Epoch')
-    plt.ylabel(scalar_name)
+    # Use the display name for the y-axis label if it is provided, otherwise use the scalar name
+    ylabel = display_names_dict[
+        scalar_name] if display_names_dict and scalar_name in display_names_dict else scalar_name
+    plt.ylabel(ylabel)
     plt.legend()
-
+    if output_prefix is not None:
+        output_filename = f'{output_prefix}_{scalar_name}_folds_plot.png'
+    else:
+        output_filename = f'{scalar_name}_folds_plot.png'
     if output_path is not None:
         output_path = Path(output_path)
         if output_path.is_dir():
             output_path.mkdir(parents=True, exist_ok=True)
-            output_path = output_path / f'{scalar_name}_folds_plot.png'
+            output_path = output_path / output_filename
         plt.savefig(output_path)
 
     if display_plot:
