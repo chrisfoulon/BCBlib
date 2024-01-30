@@ -27,14 +27,19 @@ def sigma_to_fwhm(sigma):
     return sigma * np.sqrt(8 * np.log(2))
 
 
-def nifti_dataset_to_matrix(nifti_list: List[nib.Nifti1Image], pre_allocate_memory=True) -> np.ndarray:
+def nifti_dataset_to_matrix(nifti_list: List[nib.Nifti1Image], pre_allocate_memory: bool = True,
+                            disable_progress: bool = False) -> np.ndarray:
     """
     Converts a list of nifti images into a matrix where each row is a flattened nifti image
     after reorienting it to canonical space
     Parameters
     ----------
     nifti_list : list of nibabel.Nifti1Image
+        list of nifti images
     pre_allocate_memory : bool, optional
+        whether to pre-allocate the memory for the output matrix (default is True)
+    disable_progress : bool, optional
+        whether to disable the progress bar (default is False)
 
     Returns
     -------
@@ -46,7 +51,7 @@ def nifti_dataset_to_matrix(nifti_list: List[nib.Nifti1Image], pre_allocate_memo
     """
     # reorient the images and then flatten them into a matrix
     out_matrix = None
-    for i, nii in tqdm(enumerate(nifti_list)):
+    for i, nii in tqdm(enumerate(nifti_list), disable=disable_progress):
         nii = reorient_to_canonical(nii)
         flattened_nii = np.ravel(nii.get_fdata())
         if out_matrix is None:
@@ -460,6 +465,7 @@ def create_morphospace(input_matrix, dependent_variable, output_folder, trained_
 
 
 def align_embeddings(embedding1, embedding2):
+    # TODO modify it to use from scipy.spatial import procrustes
     # work on copies of the embeddings
     embedding1 = embedding1.copy()
     embedding2 = embedding2.copy()
