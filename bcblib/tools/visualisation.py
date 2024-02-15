@@ -864,3 +864,105 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
     plt.close()
 
     return best_epochs_dict
+
+
+def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None, best_func=None, display_names_dict=None):
+    """
+    Plot the values of a scalar per fold and return the subplot.
+
+    This function iterates over the items in fold_data. For each item, the key is the fold name and the value is the
+    EventAccumulator object. It checks if the EventAccumulator object contains the scalar. If it does, it gets the
+    values of the scalar and plots these values. The fold name is used as the label for the plot.
+
+    If best_func is provided, the function will compute the best value for each scalar, signal it with a red dot on the
+    plot, and print the best value and the epoch number of the best value next to the fold name in the legend. The best
+    values for each fold are stored in a dictionary.
+
+    If best_epochs is provided, the function will plot a red dot at the epoch number provided for each fold. The scalar
+    values at the best epochs for each fold are stored in a dictionary.
+
+    The function returns a subplot and a dictionary containing the best values for each fold if best_func is used or the scalar values
+    at the best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function
+    returns None.
+
+    Parameters:
+    fold_data (dict): A dictionary where the keys are the fold names and the values are the EventAccumulator objects.
+    scalar_name (str): The name of a scalar.
+    best_epochs (dict, optional): A dictionary where the keys are the fold names and the values are the epoch numbers
+        where the best values occur. Defaults to None.
+    best_func (function or dict, optional): A function to compute the best value for each scalar, or a dictionary
+    mapping scalar names to such functions. Defaults to None.
+    display_names_dict (dict, optional): A dictionary mapping scalar names to names to be displayed on the plot.
+
+    Returns:
+    fig, ax, dict: A matplotlib figure and axes objects, and a dictionary containing the best values for each fold if best_func is used or the scalar values at the
+    best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function returns
+    {}.
+
+    Raises:
+    ValueError: If an EventAccumulator object does not contain the scalar.
+    """
+    if display_names_dict is None:
+        display_names_dict = {}
+    sorted_fold_names = sorted(fold_data.keys(), key=lambda x: int(x.split('_')[1]))
+    best_epochs_dict = {}
+    plot_params_dict = {}
+    marker_params_dict = {}
+    cmap = sns.color_palette("muted")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for fold_index, fold_name in enumerate(sorted_fold_names):
+        event_acc = fold_data[fold_name]
+        if scalar_name not in event_acc.Tags()['scalars']:
+            raise ValueError(f"The scalar '{scalar_name}' is not found in the fold '{fold_name}'.")
+
+        x, y = zip(*[(s.step, s.value) for s in event_acc.Scalars(scalar_name)])
+
+        fold_label = fold_name
+        markers_created = False
+        marker_colour = cmap[fold_index % len(cmap)]
+        marker_type = 'o'
+        marker_size = 5
+        plot_marker_param = None
+        if best_epochs is not None and fold_name in best_epochs:
+            best_epoch_provided = best_epochs[fold_name]
+            if best_epoch_provided in x:
+                best_value_provided = y[x.index(best_epoch_provided)]
+                # store marker parameters for later use
+                plot_marker_param = (best_epoch_provided, best_value_provided, marker_colour, marker_type,
+                                     marker_size)
+                fold_label += f', best model at {best_epoch_provided}: {best_value_provided:.4f}'
+                markers_created = True
+                best_epochs_dict[fold_name] = best_epoch_provided
+            else:
+                print(f"Warning: Best epoch {best_epoch_provided} not found in epochs for fold {fold_name}. Skipping.")
+
+        if best_func is not None and not markers_created:
+            best_func_scalar = best_func[scalar_name] if isinstance(best_func, dict) else best_func
+            best_value = best_func_scalar(y)
+            best_epoch = x[y.index(best_value)]
+            # store marker parameters for later use
+            plot_marker_param = (best_epoch, best_value, marker_colour, marker_type, marker_size)
+            fold_label += f', best at {best_epoch}: {best_value:.4f}'
+            best_epochs_dict[fold_name] = best_epoch
+
+        plot_params_dict[fold_name] = (x, y, fold_label, marker_colour)
+        if plot_marker_param is not None:
+            marker_params_dict[fold_name] = plot_marker_param
+
+    for fold_name in sorted_fold_names:
+        x, y, fold_label, colour = plot_params_dict[fold_name]
+        ax.plot(x, y, label=fold_label, color=colour)
+
+    for fold_name in sorted_fold_names:
+        if fold_name in marker_params_dict:
+            ax.plot(*marker_params_dict[fold_name][:2], color=marker_params_dict[fold_name][2],
+                    marker=marker_params_dict[fold_name][3],
+                    markersize=marker_params_dict[fold_name][4], markeredgewidth=1, markeredgecolor='black')
+    ax.set_xlabel('Epoch')
+    # Use the display name for the y-axis label if it is provided, otherwise use the scalar name
+    ylabel = display_names_dict[
+        scalar_name] if display_names_dict and scalar_name in display_names_dict else scalar_name
+    ax.set_ylabel(ylabel)
+    ax.legend()
+
+    return fig, ax, best_epochs_dict

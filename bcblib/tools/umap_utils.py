@@ -261,11 +261,96 @@ def get_overlaping_input_indices(p_map, slices):
     return overlaping_inputs
 
 
-def create_morphospace(input_matrix, dependent_variable, output_folder, trained_umap=None,
-                       out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
-                       stats_method='pearsonr', points_overlap_proportion_threshold=0.8, prefix='',
-                       **umap_param):
+def clean_pipeline(input_matrix, dependent_variable, output_folder, matrix_for_embeddings=None, trained_umap=None,
+                   out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
+                   stats_method='pearsonr', points_overlap_proportion_threshold=0.8, prefix='',
+                   **umap_param):
+    """
+    1) Train or load a UMAP model
+    2) Transform the input matrix into the UMAP space
+    3) Rescale the coordinates to the output nd-grid (check the overlap proportion)
+    3.5) If matrix_for_embeddings is provided, transform it into the UMAP space and rescale the coordinates to the
+    output nd-grid
+    4) Create the stacked 2D slices for the morphospace (using the matrix_for_embeddings if provided)
+    5) Smooth the morphospace
+    6) Compute the dependent variable heatmap
+    7) Run the stats_method on the heatmap
+    8) Correct the p-values
+    Parameters
+    ----------
+    input_matrix
+    dependent_variable
+    output_folder
+    matrix_for_embeddings
+    trained_umap
+    out_cell_nb
+    fwhm
+    sigma
+    filling_value
+    show
+    stats_method
+    points_overlap_proportion_threshold
+    prefix
+    umap_param
 
+    Returns
+    -------
+
+    """
+    if not Path(output_folder).is_dir():
+        Path(output_folder).mkdir(parents=True)
+
+    # first we train the UMAP model
+    if trained_umap is None:
+        trained_umap = train_umap(input_matrix, **umap_param)
+        joblib.dump(trained_umap, Path(output_folder).joinpath('trained_umap.sav'))
+        print(f'Trained UMAP model saved in {Path(output_folder).joinpath("trained_umap.sav")}')
+    else:
+        # if trained_umap is a path load it, otherwise assume it is a trained UMAP model
+        if isinstance(trained_umap, os.PathLike) or isinstance(trained_umap, str):
+            print('Using the provided trained UMAP model')
+            trained_umap = joblib.load(trained_umap)
+        else:
+            if not isinstance(trained_umap, umap.UMAP):
+                print(f'trained_umap type: {type(trained_umap)}')
+                raise ValueError(f'trained_umap must be a path to a trained UMAP model or a trained UMAP model')
+
+    # then we transform the input matrix into the UMAP space
+    orig_umap_space = trained_umap.transform(input_matrix)
+    print('Input matrix transformed into the UMAP space')
+    # recenter the x and y coordinates to 0
+    orig_umap_space -= np.min(orig_umap_space, axis=0)
+    # then we rescale the coordinates to the output nd-grid
+    rescaled_coords, scaling_factor = rescale_morphostace_coord(
+        input_matrix, trained_umap, out_cell_nb)
+    # round the coordinates
+    rescaled_coords_rounded = np.round(rescaled_coords).astype(int)
+    # the bounding box is the maximum coordinates rounded up in each dimension of rescaled_coords
+    bounding_box = [np.max(np.ceil(rescaled_coords[:, i])) for i in range(rescaled_coords.shape[1])]
+    bounding_box = np.array(bounding_box).astype(int)
+    # add 1 to the bounding box to account for the 0 index
+    bounding_box += 1
+    # if matrix_for_embeddings is provided, transform it into the UMAP space and rescale the coordinates to the
+    # output nd-grid
+    if matrix_for_embeddings is not None:
+        # if this is a path load it, otherwise assume it is a matrix
+        if isinstance(matrix_for_embeddings, os.PathLike) or isinstance(matrix_for_embeddings, str):
+            print('Loading the matrix for embeddings')
+            matrix_for_embeddings = np.load(matrix_for_embeddings)
+        embeddings_for_stats = trained_umap.transform(matrix_for_embeddings)
+        # centre using the min of orig_umap_space and rescale using the scaling factor found with the input_matrix
+        embeddings_for_stats -= np.min(orig_umap_space, axis=0)
+        embeddings_for_stats *= scaling_factor
+        # round the coordinates
+        embeddings_for_stats_rounded = np.round(embeddings_for_stats).astype(int)
+        # the bounding box is the maximum coordinates rounded up in each dimension of rescaled_coords
+        bounding_box_for_stats = [np.max(np.ceil(embeddings_for_stats[:, i])) for i in range(embeddings_for_stats.shape[1])]
+
+
+def test_pipeline(input_matrix, dependent_variable, output_folder, trained_umap=None,
+                  out_cell_nb=10000, fwhm=None, sigma=None, filling_value=1, show=-1,
+                  stats_method='pearsonr', points_overlap_proportion_threshold=0.8, prefix='',
+                  **umap_param):
     mpl.rcParams['image.cmap'] = 'plasma'
 
     if not Path(output_folder).is_dir():
