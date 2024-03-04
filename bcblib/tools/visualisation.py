@@ -910,13 +910,12 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
     marker_params_dict = {}
     cmap = sns.color_palette("muted")
     fig, ax = plt.subplots(figsize=(10, 5))
+    best_values = []  # List to store the best values for each fold
     for fold_index, fold_name in enumerate(sorted_fold_names):
         event_acc = fold_data[fold_name]
         if scalar_name not in event_acc.Tags()['scalars']:
             raise ValueError(f"The scalar '{scalar_name}' is not found in the fold '{fold_name}'.")
-
         x, y = zip(*[(s.step, s.value) for s in event_acc.Scalars(scalar_name)])
-
         fold_label = fold_name
         markers_created = False
         marker_colour = cmap[fold_index % len(cmap)]
@@ -927,42 +926,40 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
             best_epoch_provided = best_epochs[fold_name]
             if best_epoch_provided in x:
                 best_value_provided = y[x.index(best_epoch_provided)]
-                # store marker parameters for later use
-                plot_marker_param = (best_epoch_provided, best_value_provided, marker_colour, marker_type,
-                                     marker_size)
+                plot_marker_param = (best_epoch_provided, best_value_provided, marker_colour, marker_type, marker_size)
                 fold_label += f', best model at {best_epoch_provided}: {best_value_provided:.4f}'
                 markers_created = True
                 best_epochs_dict[fold_name] = best_epoch_provided
+                best_values.append(best_value_provided)  # Add the best value to the list
             else:
                 print(f"Warning: Best epoch {best_epoch_provided} not found in epochs for fold {fold_name}. Skipping.")
-
         if best_func is not None and not markers_created:
             best_func_scalar = best_func[scalar_name] if isinstance(best_func, dict) else best_func
             best_value = best_func_scalar(y)
             best_epoch = x[y.index(best_value)]
-            # store marker parameters for later use
             plot_marker_param = (best_epoch, best_value, marker_colour, marker_type, marker_size)
             fold_label += f', best at {best_epoch}: {best_value:.4f}'
             best_epochs_dict[fold_name] = best_epoch
-
+            best_values.append(best_value)  # Add the best value to the list
         plot_params_dict[fold_name] = (x, y, fold_label, marker_colour)
         if plot_marker_param is not None:
             marker_params_dict[fold_name] = plot_marker_param
-
     for fold_name in sorted_fold_names:
         x, y, fold_label, colour = plot_params_dict[fold_name]
-        ax.plot(x, y, label=fold_label, color=colour)
-
+        plt.plot(x, y, label=fold_label, color=colour)
     for fold_name in sorted_fold_names:
         if fold_name in marker_params_dict:
-            ax.plot(*marker_params_dict[fold_name][:2], color=marker_params_dict[fold_name][2],
-                    marker=marker_params_dict[fold_name][3],
-                    markersize=marker_params_dict[fold_name][4], markeredgewidth=1, markeredgecolor='black')
+            plt.plot(*marker_params_dict[fold_name][:2], color=marker_params_dict[fold_name][2],
+                     marker=marker_params_dict[fold_name][3],
+                     markersize=marker_params_dict[fold_name][4], markeredgewidth=1, markeredgecolor='black')
     ax.set_xlabel('Epoch')
-    # Use the display name for the y-axis label if it is provided, otherwise use the scalar name
     ylabel = display_names_dict[
         scalar_name] if display_names_dict and scalar_name in display_names_dict else scalar_name
     ax.set_ylabel(ylabel)
     ax.legend()
-
+    # Calculate mean and standard deviation of best scalar values for all folds
+    mean_value = np.mean(best_values)
+    std_value = np.std(best_values)
+    # Set the title of the subplot to include the mean and standard deviation of the best values
+    ax.set_title(f'(mean: {mean_value:.4f}, std: {std_value:.4f})')
     return fig, ax, best_epochs_dict
