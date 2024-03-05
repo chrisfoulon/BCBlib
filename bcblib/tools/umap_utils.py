@@ -147,6 +147,7 @@ def rescale_morphostace_coord(input_matrix, trained_umap, out_cell_nb=10000):
 
     """
     # get the coordinates of the input matrix in the UMAP space
+    # TODO WE DO NOT NEED TO EMBED THE INPUT IF IT WAS THE TRAINING DATA!
     input_coordinates = trained_umap.transform(input_matrix)
     # get the maximum coordinates in each dimension of the input matrix
     max_coordinates = np.max(input_coordinates, axis=0)
