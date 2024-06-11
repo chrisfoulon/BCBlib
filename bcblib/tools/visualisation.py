@@ -12,6 +12,8 @@ import pandas as pd
 import nibabel as nib
 from matplotlib import pyplot as plt
 import seaborn as sns
+from nilearn.plotting import plot_roi
+from scipy.ndimage import center_of_mass
 
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -963,3 +965,54 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
     # Set the title of the subplot to include the mean and standard deviation of the best values
     ax.set_title(f'(mean: {mean_value:.4f}, std: {std_value:.4f})')
     return fig, ax, best_epochs_dict
+
+
+def plot_multiple_rois(images: list, affine: np.ndarray, output_folder: str = None, prefix: str = '') -> list:
+    """
+    Plot multiple ROIs using nilearn's plot_roi function, with one subplot per image.
+
+    Parameters
+    ----------
+    images : list of np.ndarray
+        List of numpy arrays representing the images to plot.
+    affine : np.ndarray
+        Affine matrix associated with the images.
+    output_folder : str, optional
+        Path to the folder where the plots will be saved. If not provided, the plots will be displayed.
+    prefix : str, optional
+        Prefix to add to the output file names.
+
+    Returns
+    -------
+    None
+    """
+    # Number of images
+    n_images = len(images)
+
+    # Create a figure with subplots
+    fig, axes = plt.subplots(1, n_images, figsize=(4 * n_images, 4))
+
+    # Ensure axes is an array even if there's only one image
+    if n_images == 1:
+        axes = [axes]
+    nifti_list = []
+    for i, image in enumerate(images):
+        # Convert the numpy array to a NIfTI image
+        nifti_image = nib.Nifti1Image(image, affine)
+        nifti_list.append(nifti_image)
+        if output_folder is not None:
+            # Save the plot to a file
+            output_path = Path(output_folder) / f'{prefix}roi_{i}.nii.gz'
+            nib.save(nifti_image, output_path)
+
+        # com = center_of_mass(image)
+        max_coord = np.unravel_index(np.argmax(image), image.shape)
+
+        # Use nilearn's plot_roi function to plot the image
+        # Specify the cut_coords parameter to only show the slice at the z coordinate of the center of mass
+        plot_roi(nifti_image, axes=axes[i], title=f'ROI {i}', display_mode='z', cut_coords=[max_coord[2]])
+
+    plt.tight_layout()
+    plt.show()
+    plt.close()
+    return nifti_list

@@ -28,14 +28,14 @@ def file_to_list(file_path, delimiter=' '):
         raise ValueError(f'{file_path} does not exist.')
     if file_path.name.endswith('.csv'):
         spreadsheet = pd.read_csv(file_path)
-        dir_list = spreadsheet.values.flatten()
+        str_list = spreadsheet.values.flatten()
     elif file_path.name.endswith('.xlsx') or file_path.name.endswith('.xls'):
         spreadsheet = pd.read_excel(file_path)
-        dir_list = spreadsheet.values.flatten()
+        str_list = spreadsheet.values.flatten()
     else:
         # default delimiter is ' ', it might need to be changed
-        dir_list = np.loadtxt(str(file_path), dtype=str, delimiter=delimiter)
-    return dir_list
+        str_list = np.loadtxt(str(file_path), dtype=str, delimiter=delimiter)
+    return str_list
 
 
 def is_index(s):
@@ -65,20 +65,21 @@ def list_of_file_paths_from_spreadsheet(spreadsheet_path, column_identifier, roo
 
 
 def parse_file_list_argument(argument, recursive_file_search=False, file_types=None, arg_separator=','):
-    input_list = argument.split(arg_separator)
+    input_list = str(argument).split(arg_separator)
     if file_types is None:
         file_types = [['.nii', '.nii.gz'], ['.jpg', '.png']]
     if len(input_list) == 1:
         # Only folder path
-        folder_path = Path(input_list[0])
+        folder_path = Path(input_list[0]).resolve()
+        flat_file_types = [item for sublist in file_types for item in sublist]
         if recursive_file_search:
             # find the files recursively that correspond to the file types
-            paths_list = [str(f) for f in folder_path.rglob('*') if f.suffix in file_types]
+            paths_list = [str(f) for f in folder_path.rglob('*') if ''.join(f.suffixes) in flat_file_types]
             # if there are different file type (.nii and .nii.gz are together and .jpg and .png are together) raise
             # an error
         else:
-            paths_list = [str(f) for f in folder_path.iterdir() if f.suffix in file_types]
-        unique_extensions = set([f.suffix for f in folder_path.rglob('*')])
+            paths_list = [str(f) for f in folder_path.iterdir() if ''.join(f.suffixes) in flat_file_types]
+        unique_extensions = set([''.join(f.suffixes) for f in folder_path.rglob('*')])
         if len(unique_extensions) > 1:
             # if file_types is a list, there must only be one unique extension, otherwise,
             # there should be extensions from only one list in file_types
@@ -100,7 +101,7 @@ def parse_file_list_argument(argument, recursive_file_search=False, file_types=N
         first, second = input_list
         if Path(first).is_dir():
             # Folder path and file
-            folder_path = Path(first)
+            folder_path = Path(first).resolve()
             paths_list = file_to_list(second)
             paths_list = [str(folder_path.joinpath(p)) for p in paths_list]
             # check if the paths exist
@@ -109,7 +110,7 @@ def parse_file_list_argument(argument, recursive_file_search=False, file_types=N
                     raise ArgumentTypeError(f"Path {p} does not exist")
         elif Path(second).is_dir():
             # File and folder path
-            folder_path = Path(second)
+            folder_path = Path(second).resolve()
             paths_list = file_to_list(first)
             paths_list = [str(folder_path.joinpath(p)) for p in paths_list]
             # check if the paths exist
@@ -123,11 +124,11 @@ def parse_file_list_argument(argument, recursive_file_search=False, file_types=N
             else:
                 if Path(first).is_file():
                     # Spreadsheet and column
-                    spreadsheet_path = Path(first)
+                    spreadsheet_path = Path(first).resolve()
                     column_identifier = second
                 elif Path(second).is_file():
                     # Spreadsheet and column
-                    spreadsheet_path = Path(second)
+                    spreadsheet_path = Path(second).resolve()
                     column_identifier = first
                 else:
                     raise ArgumentTypeError(f"Invalid input: {first}, {second}")
@@ -138,9 +139,9 @@ def parse_file_list_argument(argument, recursive_file_search=False, file_types=N
         folder_path = spreadsheet_path = column_identifier = None
         for item in input_list:
             if Path(item).is_dir():
-                folder_path = Path(item)
+                folder_path = Path(item).resolve()
             elif Path(item).is_file():
-                spreadsheet_path = Path(item)
+                spreadsheet_path = Path(item).resolve()
             else:
                 column_identifier = item
 

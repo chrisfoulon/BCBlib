@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 import csv
 from typing import Union
@@ -17,6 +18,8 @@ def is_nifti(filename):
 
 
 def file_to_list(file_path, delimiter=' '):
+    warnings.warn("bcblib: file_to_list is deprecated and will be removed in a future version",
+                  DeprecationWarning)
     file_path = Path(file_path)
     if not file_path.is_file():
         raise ValueError(f'{file_path} does not exist.')
@@ -380,17 +383,6 @@ def binarize_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int
             thr_data[data == background_intensity] = 0
             thr_data[data > background_intensity] = 1
     return nib.Nifti1Image(thr_data, hdr.affine)
-
-
-def reorient_image(img, orientation):
-    # TODO
-    img = nib.load(img)
-    ornt = np.array([[0, 1],
-                     [1, -1],
-                     [2, 1]])
-    img = nib.load(img)
-    img = img.as_reoriented(ornt)
-    return img
 
 
 def laterality_ratio(image):
