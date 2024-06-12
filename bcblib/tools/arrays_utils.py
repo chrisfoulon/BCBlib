@@ -64,13 +64,6 @@ def separate_clusters_and_extract_coords(array, coords_array):
     binary_array = np.where(np.isfinite(array) & (array != 0), 1, 0)
     # Label the clusters in the input array
     labeled_array, num_clusters = label(binary_array)
-    print(f'Unique values in labeled array: {np.unique(labeled_array)}')
-    print(f'Number of clusters: {num_clusters}')
-
-    # plot the clusters
-    for i in range(1, num_clusters + 1):
-        plt.imshow(labeled_array == i)
-        plt.show()
 
     # Initialize lists to store the separated clusters and the corresponding indices
     clusters = []
