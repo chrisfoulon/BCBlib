@@ -12,8 +12,10 @@ import pandas as pd
 import nibabel as nib
 from matplotlib import pyplot as plt
 import seaborn as sns
+from matplotlib.cm import ScalarMappable
 from nilearn.plotting import plot_roi
 from scipy.ndimage import center_of_mass
+from nilearn.image import resample_to_img, math_img
 
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -967,7 +969,9 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
     return fig, ax, best_epochs_dict
 
 
-def plot_multiple_rois(images: list, affine: np.ndarray, output_folder: str = None, prefix: str = '') -> list:
+def plot_multiple_rois(images: list, affine: np.ndarray, overlay_path: str = None,
+                       output_folder: str = None, prefix: str = '', image_mask: Union[bool, str] = False,
+                       threshold: Union[float, None] = None, **plot_roi_kwargs) -> list:
     """
     Plot multiple ROIs using nilearn's plot_roi function, with one subplot per image.
 
@@ -977,42 +981,95 @@ def plot_multiple_rois(images: list, affine: np.ndarray, output_folder: str = No
         List of numpy arrays representing the images to plot.
     affine : np.ndarray
         Affine matrix associated with the images.
+    overlay_path : str, optional
+        Path to a mask image to overlay on the images. If not provided, the images will be plotted without a mask.
     output_folder : str, optional
         Path to the folder where the plots will be saved. If not provided, the plots will be displayed.
     prefix : str, optional
         Prefix to add to the output file names.
+    image_mask : bool or str, optional
+        If True, overlay_path needs to be an existing path as it will be used to mask the image.
+        If it's a path, the mask needs to be loaded and applied to the image.
+    threshold : float, optional
+        Threshold value to apply to the nifti images.
 
     Returns
     -------
-    None
+    list of nib.Nifti1Image
+        List of NIfTI images corresponding to the plotted ROIs.
     """
+    if output_folder is not None:
+        Path(output_folder).mkdir(parents=True, exist_ok=True)
     # Number of images
     n_images = len(images)
 
     # Create a figure with subplots
-    fig, axes = plt.subplots(1, n_images, figsize=(4 * n_images, 4))
+    fig, axes = plt.subplots(1, n_images, figsize=(4 * n_images, 4), gridspec_kw={'wspace': 0.8})
+    fig.patch.set_facecolor('white')  # Set the figure background to white
 
     # Ensure axes is an array even if there's only one image
     if n_images == 1:
         axes = [axes]
+
+    overlay_image = None
+    if isinstance(overlay_path, (os.PathLike, str)):
+        overlay_image = nib.load(overlay_path)
     nifti_list = []
     for i, image in enumerate(images):
+        # set non finite values to 0
+        image[~np.isfinite(image)] = 0
+
         # Convert the numpy array to a NIfTI image
         nifti_image = nib.Nifti1Image(image, affine)
-        nifti_list.append(nifti_image)
+
+        # If image_mask is True or a path, apply the mask to the image
+        if image_mask:
+            if isinstance(image_mask, str):
+                mask = nib.load(image_mask)
+            else:
+                mask = overlay_image
+            mask = resample_to_img(mask, nifti_image, interpolation='nearest')
+            # Binarize the mask image
+            mask = math_img("img > 0", img=mask)
+            nifti_image = math_img("img1 * img2", img1=nifti_image, img2=mask)
+
+        if threshold is not None:
+            binary_mask_img = math_img(f"img > {threshold}", img=nifti_image)
+            nifti_image = math_img("img1 * img2", img1=nifti_image, img2=binary_mask_img)
+
+        # Check if the image is empty after thresholding
+        if np.isnan(nifti_image.get_fdata()).all() or np.count_nonzero(nifti_image.get_fdata()) == 0:
+            axes[i].axis('off')
+            nifti_list.append(None)
+            continue
+
+        # Find max coordinate in nifti_image
+        max_coord = np.unravel_index(np.nanargmax(image), image.shape)
+        # compute non zero min
+        # min_val = np.nanmin(image[image != 0])
+        max_val = np.nanmax(image)
+
+        # Plot the ROI using nilearn's plot_roi function
+        display = plot_roi(nifti_image, bg_img=overlay_image, axes=axes[i], title=f'ROI {i}', display_mode='z',
+                           cut_coords=[max_coord[2]], black_bg=False, threshold=0, vmax=max_val,
+                           dim=2, **plot_roi_kwargs)
+
+        # Create a colorbar for each subplot
+        cbar_ax = fig.add_axes([axes[i].get_position().x1 + 0.01, axes[i].get_position().y0,
+                                0.02, axes[i].get_position().height])
+        mappable = ScalarMappable(cmap=plot_roi_kwargs.get('cmap', 'viridis'))
+        mappable.set_array(image)
+        cbar = fig.colorbar(mappable, cax=cbar_ax)
+        cbar.ax.tick_params(labelsize=10)
+
         if output_folder is not None:
-            # Save the plot to a file
-            output_path = Path(output_folder) / f'{prefix}roi_{i}.nii.gz'
-            nib.save(nifti_image, output_path)
+            nib.save(nifti_image, Path(output_folder) / f'{prefix}_roi_{i}.nii.gz')
+        nifti_list.append(nifti_image)
 
-        # com = center_of_mass(image)
-        max_coord = np.unravel_index(np.argmax(image), image.shape)
+    if output_folder is not None:
+        plt.savefig(Path(output_folder) / f'{prefix}_rois.png')  # Save with white background
 
-        # Use nilearn's plot_roi function to plot the image
-        # Specify the cut_coords parameter to only show the slice at the z coordinate of the center of mass
-        plot_roi(nifti_image, axes=axes[i], title=f'ROI {i}', display_mode='z', cut_coords=[max_coord[2]])
-
-    plt.tight_layout()
     plt.show()
     plt.close()
+
     return nifti_list

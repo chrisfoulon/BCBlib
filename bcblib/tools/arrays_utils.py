@@ -61,6 +61,7 @@ def separate_clusters_and_extract_coords(array, coords_array):
     indices_lists : list of list of tuple
         List of lists of coordinates for each cluster.
     """
+    array = np.nan_to_num(array, nan=0.0, posinf=0.0, neginf=0.0)
     binary_array = np.where(np.isfinite(array) & (array != 0), 1, 0)
     # Label the clusters in the input array
     labeled_array, num_clusters = label(binary_array)
