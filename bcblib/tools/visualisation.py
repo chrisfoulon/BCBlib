@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess
-from typing import Collection, Union
+from typing import Collection, Union, List
 import os
 import re
 import shutil
@@ -870,7 +870,8 @@ def plot_scalar_per_fold(fold_data, scalar_name, best_epochs=None, output_path=N
     return best_epochs_dict
 
 
-def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None, best_func=None, display_names_dict=None):
+def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None, best_func=None,
+                                        display_names_dict=None):
     """
     Plot the values of a scalar per fold and return the subplot.
 
@@ -885,9 +886,9 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
     If best_epochs is provided, the function will plot a red dot at the epoch number provided for each fold. The scalar
     values at the best epochs for each fold are stored in a dictionary.
 
-    The function returns a subplot and a dictionary containing the best values for each fold if best_func is used or the scalar values
-    at the best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function
-    returns None.
+    The function returns a subplot and a dictionary containing the best values for each fold if best_func is used or the
+    scalar values at the best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used,
+    the function returns None.
 
     Parameters:
     fold_data (dict): A dictionary where the keys are the fold names and the values are the EventAccumulator objects.
@@ -899,8 +900,9 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
     display_names_dict (dict, optional): A dictionary mapping scalar names to names to be displayed on the plot.
 
     Returns:
-    fig, ax, dict: A matplotlib figure and axes objects, and a dictionary containing the best values for each fold if best_func is used or the scalar values at the
-    best epochs for each fold if best_epochs is used. If neither best_func nor best_epochs is used, the function returns
+    fig, ax, dict: A matplotlib figure and axes objects, and a dictionary containing the best values for each fold if
+    best_func is used or the scalar values at the best epochs for each fold if best_epochs is used. If neither best_func
+    nor best_epochs is used, the function returns
     {}.
 
     Raises:
@@ -969,11 +971,40 @@ def plot_scalar_per_fold_return_subplot(fold_data, scalar_name, best_epochs=None
     return fig, ax, best_epochs_dict
 
 
-def plot_multiple_rois(images: list, affine: np.ndarray, overlay_path: str = None,
-                       output_folder: str = None, prefix: str = '', image_mask: Union[bool, str] = False,
-                       threshold: Union[float, None] = None, **plot_roi_kwargs) -> list:
+def create_colorbar(fig, ax, image, cmap):
+    # Normalize the image data
+    vmin, vmax = np.min(image), np.max(image)
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    # Create the mappable
+    mappable = ScalarMappable(cmap=cmap, norm=norm)
+    mappable.set_array(image)
+
+    # Create the colorbar
+    cbar_ax = fig.add_axes([ax.get_position().x1 + 0.01, ax.get_position().y0,
+                            0.02, ax.get_position().height])
+    cbar = fig.colorbar(mappable, cax=cbar_ax)
+
+    # Set the ticks
+    ticks = np.arange(np.floor(vmin*10)/10, np.ceil(vmax*10)/10, 0.1)
+    tick_labels = [f'{tick:.1f}' for tick in ticks]
+
+    # Append the actual maximum value as the last tick
+    ticks = np.append(ticks, vmax)
+    tick_labels.append(f'{vmax:.2f}')
+
+    # Set the ticks and their labels
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels(tick_labels)
+
+    return cbar
+
+
+def plot_multiple_rois(images: List[np.ndarray], affine: np.ndarray, overlay_path: str = None,
+                       output_folder: str = None, prefix: Union[str, List[str]] = '',
+                       image_mask: Union[bool, str] = False,
+                       threshold: Union[float, None] = None, **plot_roi_kwargs) -> List[nib.Nifti1Image]:
     """
-    Plot multiple ROIs using nilearn's plot_roi function, with one subplot per image.
+    Plot multiple ROIs using nilearn's plot_roi function, with one plot per image.
 
     Parameters
     ----------
@@ -985,8 +1016,8 @@ def plot_multiple_rois(images: list, affine: np.ndarray, overlay_path: str = Non
         Path to a mask image to overlay on the images. If not provided, the images will be plotted without a mask.
     output_folder : str, optional
         Path to the folder where the plots will be saved. If not provided, the plots will be displayed.
-    prefix : str, optional
-        Prefix to add to the output file names.
+    prefix : str or list of str, optional
+        Prefix to add to the output file names. If a list, must be the same length as images.
     image_mask : bool or str, optional
         If True, overlay_path needs to be an existing path as it will be used to mask the image.
         If it's a path, the mask needs to be loaded and applied to the image.
@@ -1000,20 +1031,17 @@ def plot_multiple_rois(images: list, affine: np.ndarray, overlay_path: str = Non
     """
     if output_folder is not None:
         Path(output_folder).mkdir(parents=True, exist_ok=True)
-    # Number of images
-    n_images = len(images)
 
-    # Create a figure with subplots
-    fig, axes = plt.subplots(1, n_images, figsize=(4 * n_images, 4), gridspec_kw={'wspace': 0.8})
-    fig.patch.set_facecolor('white')  # Set the figure background to white
-
-    # Ensure axes is an array even if there's only one image
-    if n_images == 1:
-        axes = [axes]
+    # Ensure prefix is a list of the correct length
+    if isinstance(prefix, str):
+        prefix = [prefix] * len(images)
+    elif len(prefix) != len(images):
+        raise ValueError("Prefix list must be the same length as images list.")
 
     overlay_image = None
     if isinstance(overlay_path, (os.PathLike, str)):
         overlay_image = nib.load(overlay_path)
+
     nifti_list = []
     for i, image in enumerate(images):
         # set non finite values to 0
@@ -1039,37 +1067,33 @@ def plot_multiple_rois(images: list, affine: np.ndarray, overlay_path: str = Non
 
         # Check if the image is empty after thresholding
         if np.isnan(nifti_image.get_fdata()).all() or np.count_nonzero(nifti_image.get_fdata()) == 0:
-            axes[i].axis('off')
             nifti_list.append(None)
             continue
 
+        # Create a figure
+        fig, ax = plt.subplots(figsize=(6, 6))
+        fig.patch.set_alpha(0.0)  # Set the figure background to transparent
+
         # Find max coordinate in nifti_image
         max_coord = np.unravel_index(np.nanargmax(image), image.shape)
-        # compute non zero min
-        # min_val = np.nanmin(image[image != 0])
         max_val = np.nanmax(image)
+        cmap = plot_roi_kwargs.get('cmap', 'viridis')
 
         # Plot the ROI using nilearn's plot_roi function
-        display = plot_roi(nifti_image, bg_img=overlay_image, axes=axes[i], title=f'ROI {i}', display_mode='z',
+        display = plot_roi(nifti_image, bg_img=overlay_image, axes=ax, title=None, display_mode='z',
                            cut_coords=[max_coord[2]], black_bg=False, threshold=0, vmax=max_val,
-                           dim=2, **plot_roi_kwargs)
+                           dim=2, colorbar=False, **plot_roi_kwargs)
 
-        # Create a colorbar for each subplot
-        cbar_ax = fig.add_axes([axes[i].get_position().x1 + 0.01, axes[i].get_position().y0,
-                                0.02, axes[i].get_position().height])
-        mappable = ScalarMappable(cmap=plot_roi_kwargs.get('cmap', 'viridis'))
-        mappable.set_array(image)
-        cbar = fig.colorbar(mappable, cax=cbar_ax)
-        cbar.ax.tick_params(labelsize=10)
+        # Create a colorbar for each plot using the create_colorbar function
+        create_colorbar(fig, ax, nifti_image.get_fdata(), cmap)
 
         if output_folder is not None:
-            nib.save(nifti_image, Path(output_folder) / f'{prefix}_roi_{i}.nii.gz')
+            file_path = Path(output_folder) / f'{prefix[i]}_roi_{i}.nii.gz'
+            nib.save(nifti_image, file_path)
+            plt.savefig(Path(output_folder) / f'{prefix[i]}_roi_{i}.png', transparent=True)  # Save with transparent background
+
+        plt.show()
+        plt.close()
         nifti_list.append(nifti_image)
-
-    if output_folder is not None:
-        plt.savefig(Path(output_folder) / f'{prefix}_rois.png')  # Save with white background
-
-    plt.show()
-    plt.close()
 
     return nifti_list

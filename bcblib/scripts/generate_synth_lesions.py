@@ -16,6 +16,8 @@ from nilearn.masking import compute_multi_background_mask, intersect_masks
 from nilearn.image import threshold_img
 from sklearn.cluster import KMeans
 
+from bcblib.tools.general_utils import file_to_list
+
 
 # input: /data/Chris/lesionsFormated
 def create_coverage_mask(image_path_list):
@@ -31,19 +33,27 @@ def create_coverage_mask(image_path_list):
     return compute_multi_background_mask(nii_list, threshold=0, connected=False, n_jobs=-1)
 
 
-def create_lesion_set(coverage_mask, roi_size, output_path=None):
+def create_parcel_set(coverage_mask, roi_size=None, num_parcels=None, output_path=None):
     mask_coord = np.where(coverage_mask.get_fdata())
     mask_coord = [(mask_coord[0][i], mask_coord[1][i], mask_coord[2][i]) for i, _ in enumerate(mask_coord[0])]
-    k = int(np.floor(len(mask_coord) / roi_size))
+
+    if num_parcels is not None:
+        k = num_parcels
+    elif roi_size is not None:
+        k = int(np.floor(len(mask_coord) / roi_size))
+    else:
+        raise ValueError("Either roi_size or num_parcels must be provided.")
     if k == 0:
         return None
     print('Running KMeans with k = {}'.format(k))
-    kmeans = KMeans(k).fit(mask_coord)
+    kmeans = KMeans(k, n_init='auto').fit(mask_coord)
     kmeans_labels_img = kmeans.labels_
     new_data = np.zeros(coverage_mask.shape, int)
     for ind, c in enumerate(mask_coord):
         # KMeans labels start at 0, to avoid the first cluster to be in the 0 background of the image we add 1
         new_data[c] = kmeans_labels_img[ind] + 1
+    # set new_data dtype to the same as the coverage_mask
+    new_data = new_data.astype(coverage_mask.get_fdata().dtype)
     new_nii = nib.Nifti1Image(new_data, coverage_mask.affine)
     if output_path is not None and output_path != '':
         nib.save(new_nii, output_path)
@@ -82,21 +92,60 @@ def print_imgs_avg_size(list_img):
 
 
 def main():
+    """
+
+    Returns
+    -------
+
+    Examples:
+    roi_size_list = ['300000', '200000', '120000', '110000', '100000', '90000', '80000', '70000', '60000', '50000',
+                     '40000', '30000', '20000', '10000', '9000', '8000', '7000', '6000', '5000', '4000', '3000', '2000',
+                     '1000', '900', '800', '700', '600', '500', '400', '300', '200', '100', '35000', '25000', '15000']
+    """
     parser = argparse.ArgumentParser(description='Generate matched synthetic lesions dataset')
     paths_group = parser.add_mutually_exclusive_group(required=True)
     paths_group.add_argument('-p', '--input_path', type=str, help='Root folder of the lesion dataset')
-    paths_group.add_argument('-li-', '--input_list', type=str, help='Text file containing the list of lesion files')
-    paths_group.add_argument('-m', '--mask', type=str, help='region where the synthetic lesions will be generated')
-    parser.add_argument('-o', '--output', type=str, help='output folder')
-    parser.add_argument('-fwhm', '--smoothing_param', type=int, default='12',
-                        help='fwhm parameter to nilearn smooth_img function')
+    paths_group.add_argument('-li-', '--input_list', type=str,
+                             help='Text file containing the list of lesion files')
+    paths_group.add_argument('-m', '--mask', type=str,
+                             help='Region where the synthetic lesions will be generated')
+
+    parser.add_argument('-o', '--output', type=str, help='Output folder')
+    parser.add_argument('-fwhm', '--smoothing_param', type=int, default=0,
+                        help='FWHM parameter to nilearn smooth_img function')
     parser.add_argument('-thr', '--smoothing_threshold', type=float, default=0.5,
                         help='Threshold applied on the smoothing')
+    parser.add_argument('--random_state', type=int, default=None,
+                        help='Fix random seed for reproducibility')
 
-    # parser.add_argument('-v', '--verbose', default='info', choices=['none', 'info', 'debug'], nargs='?', const='info',
-    #                     type=str, help='print info or debugging messages [default is "info"] ')
+    # New arguments for roi_size_list
+    # Create a mutually exclusive group for roi_size_list and num_parcels
+    roi_group = parser.add_mutually_exclusive_group(required=True)
+    roi_group.add_argument('-rsl', '--roi_size_list', type=str,
+                           help='Comma-separated list of parcel sizes, '
+                                'or path to file containing the list of parcel sizes')
+    roi_group.add_argument('-np', '--num_parcels', type=int,
+                           help='Number of parcels to generate')
+
     args = parser.parse_args()
     args.output = os.path.abspath(args.output)
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+
+    if random_state is not None:
+        np.random.seed(random_state)
+        random.seed(random_state)
+
+    # Process the roi_size_list or num_parcels argument
+    if args.roi_size_list:
+        if os.path.exists(args.roi_size_list):
+            roi_size_list = file_to_list(args.roi_size_list)
+        else:
+            roi_size_list = [s.strip() for s in args.roi_size_list.split(',')]
+        roi_size_list = [int(s) for s in roi_size_list]
+    elif args.num_parcels:
+        roi_size_list = [None]  # roi_size will be None, and num_parcels will be used instead
+
     if args.mask is not None:
         args.mask = os.path.abspath(args.mask)
         if not os.path.exists(args.mask):
@@ -124,30 +173,32 @@ def main():
         nib.save(coverage_mask, os.path.join(args.output, 'coverage_mask.nii.gz'))
     thr = args.smoothing_threshold
     # match +-10% size random in the pool
-    # iterate on sizes from the list in master.sh
-    roi_size_list = ['300000', '200000', '120000', '110000', '100000', '90000', '80000', '70000', '60000', '50000',
-                     '40000', '30000', '20000', '10000', '9000', '8000', '7000', '6000', '5000', '4000', '3000', '2000',
-                     '1000', '900', '800', '700', '600', '500', '400', '300', '200', '100', '35000', '25000', '15000']
-    # just for testing
-    # roi_size_list = ['3000', '4000', '5000']
-    # roi_size_list = [6998, 4275, 2300, 11945, 96, 5322, 5604, 8229, 6334, 3765, 8225, 449, 10305, 1755, 753, 2378,
-    #                  2834, 4726, 24041,10119, 8366, 24358, 5175, 8380, 2592, 3298, 3946, 11453, 7328, 3073, 5104,
-    #                  1065, 2532, 4849, 5930, 27200, 304]
     synth_lesion_size_dict = {}
     for s in roi_size_list:
-        print('Running the KMeans with ROIsize = {}'.format(s))
-        labels_img = create_lesion_set(coverage_mask, int(s), os.path.join(args.output, 'labels_{}.nii.gz'.format(s)))
-        if labels_img is None:
+        if s is not None:
+            print('Running the KMeans with ROIsize = {}'.format(s))
+            parcels_img = create_parcel_set(coverage_mask, roi_size=int(s),
+                                            output_path=os.path.join(args.output, 'parcels_{}.nii.gz'.format(s)))
+        else:
+            print('Running the KMeans with num_parcels = {}'.format(args.num_parcels))
+            parcels_img = create_parcel_set(coverage_mask, num_parcels=args.num_parcels,
+                                            output_path=os.path.join(args.output, 'parcels_{}_parcels.nii.gz'.format(
+                                                args.num_parcels)))
+        if parcels_img is None:
             print('cluster size too big compared to the mask')
             continue
-        label_img_list = split_labels(labels_img)
-        smoothed_label_list = [nilearn.image.smooth_img(label_img, args.smoothing_param)
-                               for label_img in label_img_list]
-        smoothed_thr_label_list = [threshold_img(nii, thr) for nii in smoothed_label_list]
-        smoothed_thr_binarized_label_list = [nilearn.image.math_img('img > {}'.format(thr), img=img)
-                                             for img in smoothed_thr_label_list]
-        smoothed_thr_binarized_masked_label_list = [intersect_masks([nii, coverage_mask], 1, True)
-                                          for nii in smoothed_thr_binarized_label_list]
+        parcel_img_list = split_labels(parcels_img)
+        if args.smoothing_param > 0:
+            smoothed_label_list = [nilearn.image.smooth_img(label_img, args.smoothing_param)
+                                   for label_img in parcel_img_list]
+            smoothed_thr_label_list = [threshold_img(nii, thr) for nii in smoothed_label_list]
+            smoothed_thr_binarized_label_list = [nilearn.image.math_img('img > {}'.format(thr), img=img)
+                                                 for img in smoothed_thr_label_list]
+        else:
+            smoothed_thr_binarized_label_list = parcel_img_list
+        smoothed_thr_binarized_masked_label_list = [
+            intersect_masks(
+                [nii, coverage_mask], 1, True) for nii in smoothed_thr_binarized_label_list]
         print_imgs_avg_size(smoothed_thr_binarized_masked_label_list)
         for lesion in smoothed_thr_binarized_masked_label_list:
             lesion_size = len(np.where(lesion.get_fdata())[0])

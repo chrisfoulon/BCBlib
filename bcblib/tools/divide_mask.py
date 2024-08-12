@@ -28,9 +28,9 @@ def find_seed(coords, direc):
     """
     side = direc % 2
     axis = direc // 2
-    a_side = ["np.argmin", "np.argmax"]
     # print("The direction is: " + ["+", "-"][side] + ["x", "y", "z"][axis])
-    ext = eval(a_side[side])(coords[:, axis])
+    side_func = np.argmin if side == 0 else np.argmax
+    ext = side_func(coords[:, axis])
     return coords[ext]
 
 
@@ -60,6 +60,9 @@ def gather_round(seed, coords, size):
 
 
 def divide_compactor(img, size, random_labels=False):
+    # TODO Use a KD-Tree to optimize the neighbours search and add an option to force clusters contiguity
+    #  (testing that the input mask is fully contiguous).
+    # TODO Also add an option to allow for a random first seed.
     """ Cluster img in groups of a given number of neighbour voxels (Be sure to use a skull stripped image as the
     function divides all non-zero voxel)
     Parameters
