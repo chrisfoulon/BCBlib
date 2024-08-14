@@ -17,9 +17,63 @@ from nilearn.image import threshold_img
 from sklearn.cluster import KMeans
 
 from bcblib.tools.general_utils import file_to_list
+from bcblib.tools.divide_mask import divide_compactor
 
 
-# input: /data/Chris/lesionsFormated
+def determine_parcels(M, N=None, S=None, strategy="equal_size"):
+    """
+    Determine the number of parcels and their sizes based on the desired strategy.
+
+    Parameters
+    ----------
+    M : int
+        Total number of points to be divided into parcels.
+    N : int, optional
+        Number of parcels desired.
+    S : int, optional
+        Desired size of each parcel.
+    strategy : str, optional
+        Strategy to use for parceling.
+        Options are:
+        - "equal_size": (default) Create exactly N parcels of roughly (+- 1) equal size.
+        - "fixed_size": Create parcels of size S, with a leftover parcel if necessary.
+        - "balanced_size": Create parcels of size close to S, balancing the sizes to avoid a very small leftover parcel.
+
+    Returns
+    -------
+    list of int
+        A list containing the sizes of each parcel.
+    """
+    if strategy == "equal_size":
+        if N is None:
+            raise ValueError("N must be provided for the 'equal_size' strategy.")
+        base_size = M // N
+        remainder = M % N
+        sizes = [base_size + 1 if i < remainder else base_size for i in range(N)]
+
+    elif strategy == "fixed_size":
+        if S is None:
+            raise ValueError("S must be provided for the 'fixed_size' strategy.")
+        N = M // S
+        remainder = M % S
+        sizes = [S] * N
+        if remainder > 0:
+            sizes.append(remainder)
+
+    elif strategy == "balanced_size":
+        if S is None:
+            raise ValueError("S must be provided for the 'balanced_size' strategy.")
+        N = M // S
+        base_size = M // N
+        remainder = M % N
+        sizes = [base_size + 1 if i < remainder else base_size for i in range(N)]
+
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+
+    return sizes
+
+
 def create_coverage_mask(image_path_list):
     nii_list = []
 
@@ -33,25 +87,33 @@ def create_coverage_mask(image_path_list):
     return compute_multi_background_mask(nii_list, threshold=0, connected=False, n_jobs=-1)
 
 
-def create_parcel_set(coverage_mask, roi_size=None, num_parcels=None, output_path=None):
-    mask_coord = np.where(coverage_mask.get_fdata())
-    mask_coord = [(mask_coord[0][i], mask_coord[1][i], mask_coord[2][i]) for i, _ in enumerate(mask_coord[0])]
+def create_parcel_set(coverage_mask, roi_size=None, num_parcels=None, output_path=None, method='KMeans',
+                      strategy="equal_size"):
+    mask_coord = np.array(np.where(coverage_mask.get_fdata())).T
 
+    # Determine the number of parcels and sizes using the specified strategy
     if num_parcels is not None:
-        k = num_parcels
+        sizes = determine_parcels(len(mask_coord), N=num_parcels, strategy=strategy)
     elif roi_size is not None:
-        k = int(np.floor(len(mask_coord) / roi_size))
+        sizes = determine_parcels(len(mask_coord), S=roi_size, strategy=strategy)
     else:
         raise ValueError("Either roi_size or num_parcels must be provided.")
-    if k == 0:
-        return None
-    print('Running KMeans with k = {}'.format(k))
-    kmeans = KMeans(k, n_init='auto').fit(mask_coord)
-    kmeans_labels_img = kmeans.labels_
-    new_data = np.zeros(coverage_mask.shape, int)
-    for ind, c in enumerate(mask_coord):
-        # KMeans labels start at 0, to avoid the first cluster to be in the 0 background of the image we add 1
-        new_data[c] = kmeans_labels_img[ind] + 1
+    print(f'Method = {method}')
+    if method == 'compactor':
+        print(f'Running divide_compactor with sizes = {sizes}')
+        print(f'Size of the mask (non-zero): {mask_coord.shape[0]}')
+        parcels_img = divide_compactor(coverage_mask, sizes=sizes, random_labels=True)
+        new_data = parcels_img.get_fdata()
+    else:  # Default to KMeans
+        k = len(sizes)  # Use the number of parcels determined by sizes
+        print(f'Running KMeans with k = {k}')
+        kmeans = KMeans(k, n_init='auto').fit(mask_coord)
+        kmeans_labels_img = kmeans.labels_
+        new_data = np.zeros(coverage_mask.shape, int)
+        for ind, c in enumerate(mask_coord):
+            # KMeans labels start at 0, to avoid the first cluster to be in the 0 background of the image we add 1
+            new_data[c] = kmeans_labels_img[ind] + 1
+
     # set new_data dtype to the same as the coverage_mask
     new_data = new_data.astype(coverage_mask.get_fdata().dtype)
     new_nii = nib.Nifti1Image(new_data, coverage_mask.affine)
@@ -74,8 +136,10 @@ def split_labels(labels_img, output_folder=None):
             os.mkdir(output_folder)
     for i in np.arange(1, o_max + 1):
         label = np.array(np.where(data == i))
+        print(f'Label {i} has {len(label[0])} voxels')
         mask = np.zeros(data.shape)
         mask[label[0, ], label[1, ], label[2, ]] = i
+        print(f'Label {i} has {len(np.where(mask)[0])} voxels')
         nii_label = nib.Nifti1Image(mask, affine)
         label_img_list.append(nii_label)
         if output_folder is not None:
@@ -117,24 +181,38 @@ def main():
                         help='Threshold applied on the smoothing')
     parser.add_argument('--random_state', type=int, default=None,
                         help='Fix random seed for reproducibility')
+    parser.add_argument('--method', type=str, default='KMeans',
+                        choices=['KMeans', 'compactor'],
+                        help='Clustering method to use: "KMeans" or "compactor". Default is "KMeans".')
 
     # New arguments for roi_size_list
     # Create a mutually exclusive group for roi_size_list and num_parcels
+    # TODO Change ROI by Parcels and make 'num_parcels' num_parcels_list
     roi_group = parser.add_mutually_exclusive_group(required=True)
     roi_group.add_argument('-rsl', '--roi_size_list', type=str,
                            help='Comma-separated list of parcel sizes, '
                                 'or path to file containing the list of parcel sizes')
     roi_group.add_argument('-np', '--num_parcels', type=int,
                            help='Number of parcels to generate')
+    # Add the strategy argument only for the roi_size case
+    parser.add_argument('--strategy', type=str, choices=['fixed_size', 'balanced_size'],
+                        default='fixed_size',
+                        help="Strategy for parceling with compactor when using roi_size "
+                             "('fixed_size', 'balanced_size'). Default is 'fixed_size'.")
 
     args = parser.parse_args()
     args.output = os.path.abspath(args.output)
     if not os.path.exists(args.output):
         os.makedirs(args.output)
 
-    if random_state is not None:
-        np.random.seed(random_state)
-        random.seed(random_state)
+    if args.random_state is not None:
+        np.random.seed(args.random_state)
+        random.seed(args.random_state)
+
+    if args.num_parcels is not None:
+        strategy = 'equal_size'  # Automatically use 'equal_size' strategy when num_parcels is specified
+    else:
+        strategy = args.strategy  # Use the strategy provided for roi_size
 
     # Process the roi_size_list or num_parcels argument
     if args.roi_size_list:
@@ -173,17 +251,22 @@ def main():
         nib.save(coverage_mask, os.path.join(args.output, 'coverage_mask.nii.gz'))
     thr = args.smoothing_threshold
     # match +-10% size random in the pool
-    synth_lesion_size_dict = {}
+    parcels_size_dict = {}
     for s in roi_size_list:
         if s is not None:
-            print('Running the KMeans with ROIsize = {}'.format(s))
-            parcels_img = create_parcel_set(coverage_mask, roi_size=int(s),
-                                            output_path=os.path.join(args.output, 'parcels_{}.nii.gz'.format(s)))
+            print(f'Running {args.method} with ROIsize = {s}')
+            parcels_img = create_parcel_set(
+                coverage_mask, roi_size=int(s),
+                output_path=os.path.join(args.output, f'parcellation_size_{s}.nii.gz'),
+                method=args.method, strategy=strategy
+            )
         else:
-            print('Running the KMeans with num_parcels = {}'.format(args.num_parcels))
-            parcels_img = create_parcel_set(coverage_mask, num_parcels=args.num_parcels,
-                                            output_path=os.path.join(args.output, 'parcels_{}_parcels.nii.gz'.format(
-                                                args.num_parcels)))
+            print(f'Running {args.method} with num_parcels = {args.num_parcels}')
+            parcels_img = create_parcel_set(
+                coverage_mask, num_parcels=args.num_parcels,
+                output_path=os.path.join(args.output, f'parcellation_{args.num_parcels}_parcels.nii.gz'),
+                method=args.method, strategy=strategy
+            )
         if parcels_img is None:
             print('cluster size too big compared to the mask')
             continue
@@ -194,26 +277,28 @@ def main():
             smoothed_thr_label_list = [threshold_img(nii, thr) for nii in smoothed_label_list]
             smoothed_thr_binarized_label_list = [nilearn.image.math_img('img > {}'.format(thr), img=img)
                                                  for img in smoothed_thr_label_list]
+            smoothed_thr_binarized_masked_label_list = [
+                intersect_masks(
+                    [nii, coverage_mask], 1, True)
+                for nii in smoothed_thr_binarized_label_list]
+            final_label_list = smoothed_thr_binarized_masked_label_list
         else:
-            smoothed_thr_binarized_label_list = parcel_img_list
-        smoothed_thr_binarized_masked_label_list = [
-            intersect_masks(
-                [nii, coverage_mask], 1, True) for nii in smoothed_thr_binarized_label_list]
-        print_imgs_avg_size(smoothed_thr_binarized_masked_label_list)
-        for lesion in smoothed_thr_binarized_masked_label_list:
-            lesion_size = len(np.where(lesion.get_fdata())[0])
+            final_label_list = parcel_img_list
 
-            if lesion_size not in synth_lesion_size_dict:
-                file_name = 'synth_les_{}.nii.gz'.format(lesion_size)
-                file_path = os.path.join(args.output, file_name)
-                synth_lesion_size_dict[lesion_size] = [file_path]
-            else:
-                file_name = 'synth_les_{}_{}.nii.gz'.format(lesion_size, len(synth_lesion_size_dict[lesion_size]))
-                file_path = os.path.join(args.output, file_name)
-                synth_lesion_size_dict[lesion_size].append(file_path)
-            nib.save(lesion, file_path)
-    with open(os.path.join(args.output, '__lesion_dict.json'), 'w+') as out_file:
-        json.dump(synth_lesion_size_dict, out_file, indent=4)
+        print_imgs_avg_size(final_label_list)
+        for parcel in final_label_list:
+            parcel_data = parcel.get_fdata()
+            parcel_size = len(np.where(parcel_data)[0])
+            parcel_max = int(np.max(parcel_data))
+            print(f'Parcel size: {parcel_size}, Max value in parcel: {parcel_max}')
+
+            file_name = f'parcel_{parcel_size}_cluster{parcel_max}.nii.gz'
+            file_path = os.path.join(args.output, file_name)
+            parcels_size_dict[parcel_size] = [file_path]
+
+            nib.save(parcel, file_path)
+    with open(os.path.join(args.output, '__parcels_dict.json'), 'w+') as out_file:
+        json.dump(parcels_size_dict, out_file, indent=4)
 
 
 if __name__ == '__main__':

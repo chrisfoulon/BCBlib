@@ -4,7 +4,7 @@ import numpy as np
 import random
 
 import nibabel as nib
-from scipy.spatial import distance_matrix
+from scipy.spatial import KDTree
 
 
 def find_seed(coords, direc):
@@ -34,9 +34,29 @@ def find_seed(coords, direc):
     return coords[ext]
 
 
-def gather_round(seed, coords, size):
-    """ Find the nearest voxels from the seed and return an array of their
-    coordinates
+def find_next_seed(coords, tree):
+    """
+    Find the nearest unclustered voxel to the current cluster.
+
+    Parameters
+    ----------
+    coords: np.array
+        Array of coordinates of the remaining voxels in the mask.
+    tree: KDTree
+        KDTree built from the coordinates of the voxels.
+
+    Returns
+    -------
+    np.array
+        Coordinates of the next seed voxel.
+    """
+    # Find the nearest unclustered voxel
+    dist, ind_sort = tree.query(coords, k=1)
+    return coords[ind_sort[0]]
+
+
+def gather_round(seed, coords, size, tree):
+    """ Find the nearest voxels from the seed using KDTree and return an array of their indices.
     Parameters
     ----------
     seed: np.array
@@ -53,14 +73,16 @@ def gather_round(seed, coords, size):
         array with the indixes of the nearest voxels(in coords) from seed
         (the array contains seed)
     """
-    dist_mat = distance_matrix(np.array(seed), coords)
-    ind_sort = np.argsort(dist_mat[0], 0, 'mergesort')
-    # neighbours = [coords[i] for i in ind_sort[0:size]]
-    return np.array(ind_sort[0:size])
+    # Adjust the size to the number of available points
+    size = min(size, len(coords))
+    print(f'Gathering {size} voxels around {seed}')
+    dist, ind_sort = tree.query(seed, k=size)
+    print(f'Closest voxels: {len(coords[ind_sort])}')
+    return ind_sort, coords[ind_sort]
 
 
-def divide_compactor(img, size, random_labels=False):
-    # TODO Use a KD-Tree to optimize the neighbours search and add an option to force clusters contiguity
+def divide_compactor(img, sizes, random_labels=False):
+    # TODO add an option to force clusters contiguity
     #  (testing that the input mask is fully contiguous).
     # TODO Also add an option to allow for a random first seed.
     """ Cluster img in groups of a given number of neighbour voxels (Be sure to use a skull stripped image as the
@@ -82,22 +104,43 @@ def divide_compactor(img, size, random_labels=False):
     """
     coords = np.asarray(np.where(img.get_fdata())).T
     res_data = np.zeros(img.shape)
+
+    label_list = list(range(1, len(sizes) + 1))
     if random_labels:
-        lbl_num = round(len(coords) / size) + 1
-        label_list = random.sample(range(lbl_num), lbl_num)
-    clu_lbl = 0
-    while len(coords) > 0:
-        direc = clu_lbl % 6
-        # We want to start by the +x direction but with the cluster label 1
-        clu_lbl = clu_lbl + 1
-        seed = find_seed(coords, direc)
-        tmp_clu = gather_round([seed], coords, size)
-        for i in tmp_clu:
-            v = coords[i]
-            if random_labels:
-                res_data[v[0], v[1], v[2]] = label_list[clu_lbl]
-            else:
-                res_data[v[0], v[1], v[2]] = clu_lbl
-        coords = np.delete(coords, tmp_clu, 0)
+        random.shuffle(label_list)
+
+    tree = KDTree(coords)
+
+    for clu_ind, (label, size) in enumerate(zip(label_list, sizes)):
+        if len(coords) == 0:
+            break
+
+        if clu_ind == 0:
+            # Start with a random point
+            seed_index = np.random.choice(len(coords))
+            seed = coords[seed_index]
+        else:
+            # Find the nearest unclustered seed
+            seed = find_next_seed(coords, tree)
+
+        # Get both indices and coordinates, including the seed
+        tmp_clu_indices, tmp_clu_coords = gather_round(seed, coords, size, tree)
+
+        # Use numpy indexing to assign labels
+        res_data[tuple(tmp_clu_coords.T)] = label
+        print(f'Number of voxels with label {label}: {len(res_data[res_data == label])}')
+
+        # Remove the clustered points from coords
+        coords = np.delete(coords, tmp_clu_indices, axis=0)
+
+        # Rebuild the KDTree with the remaining points
+        if len(coords) > 0:
+            tree = KDTree(coords)
+
+    # Handling remaining voxels if there are any left over
+    if len(coords) > 0:
+        last_label = max(label_list) + 1
+        res_data[tuple(coords.T)] = last_label
+
     res_img = nib.Nifti1Image(res_data, img.affine)
     return res_img

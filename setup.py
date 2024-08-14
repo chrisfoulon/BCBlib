@@ -8,7 +8,7 @@ def read(fname):
 
 setup(
     name='bcblib',        # This is the name of your PyPI-package.
-    version='0.3.9',     # Update the version number for new releases
+    version='0.3.10',     # Update the version number for new releases
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
     keywords='brain neuroimaging nifti cellular-automata bcbtoolkit bcblab',
     long_description=read('README.rst'),
@@ -27,7 +27,7 @@ setup(
     author='Chris Foulon, Michel Thiebaut de Schotten',
     author_email="hd.chrisfoulon@gmail.com",
     entry_points={
-        'console_scripts': ['generate_synth_lesions = bcblib.scripts.generate_synth_lesions:main',
+        'console_scripts': ['parcitron = bcblib.scripts.parcitron:main',
                             'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main',
                             'randomise_helper = bcblib.tools.randomise_helper:randomise_helper',
                             'anacom2 = bcblib.anacom2.anacom2:anacom2']
