@@ -87,17 +87,17 @@ def create_coverage_mask(image_path_list):
     return compute_multi_background_mask(nii_list, threshold=0, connected=False, n_jobs=-1)
 
 
-def create_parcel_set(coverage_mask, roi_size=None, num_parcels=None, output_path=None, method='KMeans',
+def create_parcel_set(coverage_mask, parcel_size=None, num_parcels=None, output_path=None, method='KMeans',
                       strategy="equal_size"):
     mask_coord = np.array(np.where(coverage_mask.get_fdata())).T
 
     # Determine the number of parcels and sizes using the specified strategy
     if num_parcels is not None:
         sizes = determine_parcels(len(mask_coord), N=num_parcels, strategy=strategy)
-    elif roi_size is not None:
-        sizes = determine_parcels(len(mask_coord), S=roi_size, strategy=strategy)
+    elif parcel_size is not None:
+        sizes = determine_parcels(len(mask_coord), S=parcel_size, strategy=strategy)
     else:
-        raise ValueError("Either roi_size or num_parcels must be provided.")
+        raise ValueError("Either parcel_size or num_parcels must be provided.")
     print(f'Method = {method}')
     if method == 'compactor':
         print(f'Running divide_compactor with sizes = {sizes}')
@@ -162,7 +162,7 @@ def main():
     -------
 
     Examples:
-    roi_size_list = ['300000', '200000', '120000', '110000', '100000', '90000', '80000', '70000', '60000', '50000',
+    parcel_size_list = ['300000', '200000', '120000', '110000', '100000', '90000', '80000', '70000', '60000', '50000',
                      '40000', '30000', '20000', '10000', '9000', '8000', '7000', '6000', '5000', '4000', '3000', '2000',
                      '1000', '900', '800', '700', '600', '500', '400', '300', '200', '100', '35000', '25000', '15000']
     """
@@ -184,20 +184,22 @@ def main():
     parser.add_argument('--method', type=str, default='KMeans',
                         choices=['KMeans', 'compactor'],
                         help='Clustering method to use: "KMeans" or "compactor". Default is "KMeans".')
+    parser.add_argument('-c', '--contiguous', action='store_true',
+                        help='Compactor option: force the clusters to be contiguous. If set, clusters will only include'
+                             ' spatially connected voxels.')
 
-    # New arguments for roi_size_list
-    # Create a mutually exclusive group for roi_size_list and num_parcels
-    # TODO Change ROI by Parcels and make 'num_parcels' num_parcels_list
-    roi_group = parser.add_mutually_exclusive_group(required=True)
-    roi_group.add_argument('-rsl', '--roi_size_list', type=str,
-                           help='Comma-separated list of parcel sizes, '
-                                'or path to file containing the list of parcel sizes')
-    roi_group.add_argument('-np', '--num_parcels', type=int,
-                           help='Number of parcels to generate')
-    # Add the strategy argument only for the roi_size case
+    # New arguments for parcel_size_list
+    # Create a mutually exclusive group for parcel_size_list and num_parcels
+    parcel_group = parser.add_mutually_exclusive_group(required=True)
+    parcel_group.add_argument('-rsl', '--parcel_size_list', type=str,
+                              help='Comma-separated list of parcel sizes, '
+                                   'or path to file containing the list of parcel sizes')
+    parcel_group.add_argument('-np', '--num_parcel_list', type=int,
+                              help='Number of parcels to generate')
+    # Add the strategy argument only for the parcel_size case
     parser.add_argument('--strategy', type=str, choices=['fixed_size', 'balanced_size'],
                         default='fixed_size',
-                        help="Strategy for parceling with compactor when using roi_size "
+                        help="Strategy for parceling with compactor when using parce_size "
                              "('fixed_size', 'balanced_size'). Default is 'fixed_size'.")
 
     args = parser.parse_args()
@@ -212,17 +214,23 @@ def main():
     if args.num_parcels is not None:
         strategy = 'equal_size'  # Automatically use 'equal_size' strategy when num_parcels is specified
     else:
-        strategy = args.strategy  # Use the strategy provided for roi_size
+        strategy = args.strategy  # Use the strategy provided for parcel_size
 
-    # Process the roi_size_list or num_parcels argument
-    if args.roi_size_list:
-        if os.path.exists(args.roi_size_list):
-            roi_size_list = file_to_list(args.roi_size_list)
+    # Process the parcel_size_list or num_parcels argument
+    if args.parcel_size_list:
+        if os.path.exists(args.parcel_size_list):
+            parcel_size_list = file_to_list(args.parcel_size_list)
         else:
-            roi_size_list = [s.strip() for s in args.roi_size_list.split(',')]
-        roi_size_list = [int(s) for s in roi_size_list]
-    elif args.num_parcels:
-        roi_size_list = [None]  # roi_size will be None, and num_parcels will be used instead
+            parcel_size_list = [s.strip() for s in args.parcel_size_list.split(',')]
+        parcel_size_list = [int(s) for s in parcel_size_list]
+        num_parcel_list = [None] * len(parcel_size_list)
+    else:
+        if os.path.exists(args.num_parcel_list):
+            num_parcel_list = file_to_list(args.num_parcel_list)
+        else:
+            num_parcel_list = [s.strip() for s in args.num_parcel_list.split(',')]
+        num_parcel_list = [int(s) for s in num_parcel_list]
+        parcel_size_list = [None] * len(num_parcel_list)
 
     if args.mask is not None:
         args.mask = os.path.abspath(args.mask)
@@ -252,19 +260,19 @@ def main():
     thr = args.smoothing_threshold
     # match +-10% size random in the pool
     parcels_size_dict = {}
-    for s in roi_size_list:
-        if s is not None:
-            print(f'Running {args.method} with ROIsize = {s}')
+    for parcel_size, number_parcels in zip(parcel_size_list, num_parcel_list):
+        if parcel_size is not None:
+            print(f'Running {args.method} with parcel size = {parcel_size}')
             parcels_img = create_parcel_set(
-                coverage_mask, roi_size=int(s),
-                output_path=os.path.join(args.output, f'parcellation_size_{s}.nii.gz'),
+                coverage_mask, parcel_size=int(parcel_size),
+                output_path=os.path.join(args.output, f'parcellation_size_{parcel_size}.nii.gz'),
                 method=args.method, strategy=strategy
             )
         else:
-            print(f'Running {args.method} with num_parcels = {args.num_parcels}')
+            print(f'Running {args.method} with num_parcels = {number_parcels}')
             parcels_img = create_parcel_set(
-                coverage_mask, num_parcels=args.num_parcels,
-                output_path=os.path.join(args.output, f'parcellation_{args.num_parcels}_parcels.nii.gz'),
+                coverage_mask, num_parcels=number_parcels,
+                output_path=os.path.join(args.output, f'parcellation_{number_parcels}_parcels.nii.gz'),
                 method=args.method, strategy=strategy
             )
         if parcels_img is None:
