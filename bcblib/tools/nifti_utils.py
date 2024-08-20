@@ -4,6 +4,9 @@ from pathlib import Path
 import csv
 from typing import Union
 
+from matplotlib import font_manager, pyplot as plt
+from nilearn import plotting
+from nilearn.image import image
 from nilearn.regions import connected_regions
 from tqdm import tqdm
 import numpy as np
@@ -431,6 +434,202 @@ def get_volume(img, ratio=False, threshold=0):
         # ratio of voxels with > threshold by the total number of voxels
         data = load_nifti(img).get_fdata()
         return np.count_nonzero(data > threshold) / np.prod(data.shape)
+
+
+def mask_statistical_image(stat_img: nib.Nifti1Image, mask_img: nib.Nifti1Image, verbose: bool=True) -> nib.Nifti1Image:
+    """
+    Apply a mask to a statistical image, setting voxels outside the mask range to zero.
+
+    This function resamples a mask image to the space of the statistical image and then applies the mask
+    to the statistical image. Voxels in the statistical image that fall outside the masked region
+    are set to zero.
+
+    Parameters:
+    -----------
+    stat_img : nib.Nifti1Image
+        The statistical image to be masked.
+
+    mask_img : nib.Nifti1Image
+        The mask image to be resampled and applied to the statistical image.
+
+    Returns:
+    --------
+    masked_stat_img : nib.Nifti1Image
+        The masked statistical image, with non-masked voxels set to zero.
+
+    Notes:
+    ------
+    The function assumes that the mask is a binary image, where non-zero voxels indicate regions of
+    interest, and zeros indicate regions to be masked out. The mask is resampled to match the affine
+    and shape of the statistical image before being applied.
+    """
+    # Resample the template to the space of the statistical image
+    resampled_template_img = image.resample_img(mask_img, target_affine=stat_img.affine,
+                                                target_shape=stat_img.shape)
+
+    # Get the data from the resampled template image and the statistical image
+    resampled_template_data = resampled_template_img.get_fdata()
+    stat_data = stat_img.get_fdata()
+
+    # Apply the mask: set values to zero where the template data is outside the desired range
+    # resampled_template_data = (resampled_template_data >= 40) & (resampled_template_data <= 80)
+    masked_stat_data = np.where(resampled_template_data, stat_data, 0)
+    if verbose:
+        print(f'Number of voxels removed by the mask: '
+              f'{np.count_nonzero(stat_data) - np.count_nonzero(masked_stat_data)}')
+
+    # Create a new Nifti1Image for the masked data
+    masked_stat_img = nib.Nifti1Image(masked_stat_data, stat_img.affine)
+
+    return masked_stat_img
+
+
+def plot_statistical_map(stat_img_path: str, template_path: str, output_folder: str,
+                         otf_font_path: str = None, title: str = '', cmap: str = 'viridis',
+                         prefix: str = '', low_threshold: float = None,
+                         mask_brain: str | nib.Nifti1Image = None, grid_size: str = '3x5') -> None:
+    """
+    Plot a statistical map overlaying a template image and save the resulting figure.
+
+    This function loads a statistical image and a template image, optionally applies a mask
+    and threshold to the statistical image, and then plots the statistical map using
+    a specified colormap. The output is saved as a PNG image in the specified output folder.
+
+    Parameters:
+    -----------
+    stat_img_path : str
+        Path to the statistical image file (NIfTI format).
+
+    template_path : str
+        Path to the template image file (NIfTI format).
+
+    output_folder : str
+        Directory where the output image will be saved.
+
+    otf_font_path : str, optional
+        Path to the .otf font file to be used for text in the plot. If not provided, the default
+        font will be used (default is None).
+
+    title : str, optional
+        Title for the plot (default is an empty string).
+
+    cmap : str, optional
+        Colormap to be used for the statistical map (default is 'viridis').
+
+    prefix : str, optional
+        Prefix for the output image filename (default is an empty string).
+
+    low_threshold : float, optional
+        Threshold value to apply to the statistical image. Voxels with values below this
+        threshold are set to zero (default is None, meaning no threshold is applied).
+
+    mask_brain : str or nib.Nifti1Image, optional
+        A path to a NIfTI image or a Nifti1Image object to use as a mask. If provided,
+        the mask will be applied to the statistical image using the mask_statistical_image
+        function (default is None, meaning no mask is applied).
+
+    grid_size : str, optional
+        Grid size for the plot. Accepted values are '2x4', '3x4', and '3x5'
+        (default is '3x5').
+
+    Returns:
+    --------
+    None
+        The function saves the plot as a PNG file and does not return anything.
+
+    Notes:
+    ------
+    The function assumes that the template image is in MNI space and that the mask (if applied)
+    is binary. The function supports different grid layouts for plotting based on the specified
+    cut coordinates. The output image is saved in the specified folder with the given prefix.
+    """
+
+    # Load the custom font if provided, otherwise use default font
+    font_prop = font_manager.FontProperties(fname=otf_font_path) if otf_font_path else None
+
+    # Load the template
+    mni_template = image.load_img(template_path)
+
+    # Apply a threshold to the template (between 40 and 80)
+    mni_data = mni_template.get_fdata()
+    mni_data[(mni_data < 40) | (mni_data > 80)] = 0
+    mni_template = nib.Nifti1Image(mni_data, mni_template.affine)
+
+    # Load the statistical image
+    stat_img = image.load_img(stat_img_path)
+    stat_img_data = stat_img.get_fdata()
+
+    # Threshold the statistical image
+    if low_threshold is not None:
+        stat_img_data[stat_img_data <= low_threshold] = 0
+        stat_img = nib.Nifti1Image(stat_img_data, stat_img.affine)
+
+    # Process the mask_brain parameter
+    if mask_brain is not None:
+        if isinstance(mask_brain, str):
+            mask_img = nib.load(mask_brain)
+        elif isinstance(mask_brain, nib.Nifti1Image):
+            mask_img = mask_brain
+        else:
+            raise ValueError("mask_brain must be a path to a NIfTI image or a Nifti1Image object.")
+
+        print('Masking the statistical image')
+        stat_img = mask_statistical_image(stat_img, mask_img)
+        stat_img_data = stat_img.get_fdata()
+
+    # Determine the vmax based on the stat_img data
+    vmax = stat_img_data.max()
+    vmin = stat_img_data.min()
+
+    # Set up the cut coordinates and grid based on grid_size
+    if grid_size == '2x4':
+        cut_coords = [-54, -36, -18, -2, 16, 34, 52, 70]
+        fig, axs = plt.subplots(2, 4, figsize=(20, 10), facecolor='white')
+    elif grid_size == '3x4':
+        cut_coords = [-60, -46, -34, -22, -10, 2, 14, 26, 38, 50, 62, 74]
+        fig, axs = plt.subplots(3, 4, figsize=(20, 15), facecolor='white')
+    elif grid_size == '3x5':
+        cut_coords = [-62, -52, -42, -32, -22, -12, -2, 8, 18, 28, 38, 48, 56, 66, 76]
+        fig, axs = plt.subplots(3, 5, figsize=(20, 15), facecolor='white')
+    else:
+        raise ValueError(f"Invalid grid_size '{grid_size}'. Choose from '2x4', '3x4', or '3x5'.")
+
+    # Adjust the title position to align with the first plot
+    fig.subplots_adjust(left=0.07, right=0.9, top=0.9, wspace=-0.3, hspace=0.05)
+    fig.text(0.08, 0.95, title, fontsize=16, fontproperties=font_prop, va='top', ha='left')
+
+    # Plot the statistical map overlaying the template using the custom colormap
+    for i, ax in enumerate(axs.flatten()):
+        display = plotting.plot_roi(
+            stat_img,
+            bg_img=mni_template,
+            display_mode='z',
+            cut_coords=[cut_coords[i]],
+            cmap=cmap,  # Use the custom colormap
+            axes=ax,
+            colorbar=False,  # Disable individual colorbars
+            black_bg=False,
+        )
+        if font_prop:  # Apply custom font if provided
+            for text in ax.texts:  # Accessing the texts in the Axes
+                text.set_fontproperties(font_prop)
+
+    # Create a ScalarMappable object to use for the shared colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm._A = []  # Fake data for colorbar initialization
+
+    # Manually add the colorbar with separate axes
+    cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.7])  # Adjust the [left, bottom, width, height]
+    cbar = fig.colorbar(sm, cax=cbar_ax)
+    cbar.set_ticks([1, vmax])  # Set the colorbar ticks
+    cbar.set_ticklabels([str(int(1)), str(int(vmax))])  # Set the colorbar tick labels
+
+    # Save and show the figure
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    output_path = os.path.join(output_folder, f'{prefix}stat_map.png')
+    plt.savefig(output_path, facecolor='white')
+    plt.show()
 
 
 def get_dispersion(img):

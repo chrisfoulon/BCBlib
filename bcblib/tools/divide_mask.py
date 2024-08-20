@@ -53,8 +53,9 @@ def find_next_seed(coords, tree):
         Coordinates of the next seed voxel.
     """
     # Find the nearest unclustered voxel
-    dist, ind_sort = tree.query(coords, k=1)
-    return coords[ind_sort[0]]
+    # dist, ind_sort = tree.query(coords, k=1)
+    # return coords[ind_sort[0]]
+    return coords[np.random.choice(len(coords))]
 
 
 def gather_round(seed, coords, size, tree, contiguous_clusters=False):
@@ -89,7 +90,7 @@ def gather_round(seed, coords, size, tree, contiguous_clusters=False):
             cluster_coords.append(current_point)
 
             neighbors = np.array(np.where(generate_binary_structure(3, 1))).T - 1 + current_point
-
+            random.shuffle(neighbors)  # Randomize the order of the neighbors to ovoid a bias in the cluster shape
             for neighbor in neighbors:
                 neighbor_tuple = tuple(neighbor)
                 if (neighbor_tuple not in visited and

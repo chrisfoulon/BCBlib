@@ -18,8 +18,9 @@ from nilearn.masking import compute_multi_background_mask, intersect_masks
 from nilearn.image import threshold_img
 from sklearn.cluster import KMeans
 
-from bcblib.tools.general_utils import file_to_list
+from bcblib.tools.general_utils import file_to_list, str_to_lower
 from bcblib.tools.divide_mask import divide_compactor
+from bcblib.tools.nifti_utils import is_nifti, load_nifti
 
 
 def determine_parcels(M, N=None, S=None, strategy="equal_size"):
@@ -83,9 +84,9 @@ def create_coverage_mask(image_path_list):
         if not os.path.isfile(f):
             raise ValueError('{} is not an existing file'.format(f))
         if not nii_list:
-            nii_list = [nib.load(f)]
+            nii_list = [load_nifti(f)]
         else:
-            nii_list.append(nib.load(f))
+            nii_list.append(load_nifti(f))
     return compute_multi_background_mask(nii_list, threshold=0, connected=False, n_jobs=-1)
 
 
@@ -105,7 +106,7 @@ def create_parcel_set(coverage_mask, parcel_size=None, num_parcels=None, output_
     else:
         raise ValueError("Either parcel_size or num_parcels must be provided.")
     print(f'Method = {method}')
-    if method == 'compactor':
+    if method.lower() == 'compactor':
         print(f'Running divide_compactor with sizes = {sizes}')
         print(f'Size of the mask (non-zero): {mask_coord.shape[0]}')
         parcels_img = divide_compactor(coverage_mask, sizes=sizes, random_labels=True)
@@ -118,7 +119,7 @@ def create_parcel_set(coverage_mask, parcel_size=None, num_parcels=None, output_
         new_data = np.zeros(coverage_mask.shape, int)
         for ind, c in enumerate(mask_coord):
             # KMeans labels start at 0, to avoid the first cluster to be in the 0 background of the image we add 1
-            new_data[c] = kmeans_labels_img[ind] + 1
+            new_data[tuple(c)] = kmeans_labels_img[ind] + 1
 
     # set new_data dtype to the same as the coverage_mask
     new_data = new_data.astype(coverage_mask.get_fdata().dtype)
@@ -187,9 +188,9 @@ def main():
                         help='Threshold applied on the smoothing')
     parser.add_argument('--random_state', type=int, default=None,
                         help='Fix random seed for reproducibility')
-    parser.add_argument('--method', type=str, default='KMeans',
-                        choices=['KMeans', 'compactor'],
-                        help='Clustering method to use: "KMeans" or "compactor". Default is "KMeans".')
+    parser.add_argument('--method', type=str_to_lower, default='KMeans',
+                        choices=['kmeans', 'compactor'],
+                        help='Clustering method to use: "KMeans", "compactor". Default is "KMeans".')
     parser.add_argument('-c', '--contiguous', action='store_true',
                         help='Compactor option: force the clusters to be contiguous. If set, clusters will only include'
                              ' spatially connected voxels.')
@@ -266,7 +267,7 @@ def main():
             else:
                 # default delimiter is ' ', it might need to be changed
                 les_list = np.loadtxt(args.input_list, dtype=str, delimiter=' ')
-        les_list = [os.path.abspath(f) for f in les_list]
+        les_list = [os.path.abspath(f) for f in les_list if is_nifti(f)]
         coverage_mask = create_coverage_mask(les_list)
         nib.save(coverage_mask, os.path.join(args.output, 'coverage_mask.nii.gz'))
     thr = args.smoothing_threshold
@@ -276,7 +277,7 @@ def main():
         if output_subfolder_suffix == 'parcel_size':
             output_subfolder = Path(args.output, f'{output_subfolder_suffix}_{parcel_size}')
         else:
-            output_subfolder =  Path(args.output, f'{output_subfolder_suffix}_{number_parcels}_parcels')
+            output_subfolder = Path(args.output, f'{output_subfolder_suffix}_{number_parcels}_parcels')
         if parcel_size is not None:
             print(f'Running {args.method} with parcel size = {parcel_size}')
             parcels_img = create_parcel_set(
@@ -347,6 +348,12 @@ if __name__ == '__main__':
 
     # Compactor with Balanced Size (Contiguous)
     parcitron -p "$path" -o "${output_path}/Compactor_balanced_contig" --method compactor -rsl 30000 --strategy balanced_size --contiguous --random_state 42
+    
+    # Compactor with Number of Parcels (Non-Contiguous)
+    parcitron -p "$path" -o "${output_path}/Compactor_num_parcels_noncontig" --method compactor -np 20,30,50,100 --random_state 42
+    
+    # Compactor with Number of Parcels (Contiguous)
+    parcitron -p "$path" -o "${output_path}/Compactor_num_parcels_contig" --method compactor -np 50 --contiguous --random_state 42
 
     """
     main()

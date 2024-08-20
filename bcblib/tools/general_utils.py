@@ -8,6 +8,21 @@ import pandas as pd
 from bcblib.tools.spreadsheet_io_utils import import_spreadsheet
 
 
+def str_to_lower(value):
+    """
+    Convert a string to lowercase. Mostly useful for argparse arguments.
+    Parameters
+    ----------
+    value
+
+    Returns
+    -------
+    str : str
+        The input string converted to lowercase.
+    """
+    return value.lower()
+
+
 def open_json(path):
     with open(path, 'r') as j:
         return json.load(j)

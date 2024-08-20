@@ -30,7 +30,8 @@ setup(
         'console_scripts': ['parcitron = bcblib.scripts.parcitron:main',
                             'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main',
                             'randomise_helper = bcblib.tools.randomise_helper:randomise_helper',
-                            'anacom2 = bcblib.anacom2.anacom2:anacom2']
+                            'anacom2 = bcblib.anacom2.anacom2:anacom2',
+                            'ml_results = bcblib.scripts.ml_results:main']
         # 'console_scripts': ['dicom_conversion = data_identification.scripts.dicom_conversion:convert']
     },
     project_urls={  # Optional
