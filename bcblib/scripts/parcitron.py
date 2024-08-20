@@ -6,6 +6,8 @@ Authors: Chris Foulon & Michel Thiebaut de Scotten
 import os
 import argparse
 import random
+from pathlib import Path
+
 import numpy as np
 import json
 import csv
@@ -89,6 +91,10 @@ def create_coverage_mask(image_path_list):
 
 def create_parcel_set(coverage_mask, parcel_size=None, num_parcels=None, output_path=None, method='KMeans',
                       strategy="equal_size"):
+    if output_path is not None:
+        output_path = os.path.abspath(output_path)
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
     mask_coord = np.array(np.where(coverage_mask.get_fdata())).T
 
     # Determine the number of parcels and sizes using the specified strategy
@@ -189,12 +195,12 @@ def main():
                              ' spatially connected voxels.')
 
     # New arguments for parcel_size_list
-    # Create a mutually exclusive group for parcel_size_list and num_parcels
+    # Create a mutually exclusive group for parcel_size_list and num_parcel_list
     parcel_group = parser.add_mutually_exclusive_group(required=True)
     parcel_group.add_argument('-rsl', '--parcel_size_list', type=str,
                               help='Comma-separated list of parcel sizes, '
                                    'or path to file containing the list of parcel sizes')
-    parcel_group.add_argument('-np', '--num_parcel_list', type=int,
+    parcel_group.add_argument('-np', '--num_parcel_list', type=str,
                               help='Number of parcels to generate')
     # Add the strategy argument only for the parcel_size case
     parser.add_argument('--strategy', type=str, choices=['fixed_size', 'balanced_size'],
@@ -211,12 +217,12 @@ def main():
         np.random.seed(args.random_state)
         random.seed(args.random_state)
 
-    if args.num_parcels is not None:
-        strategy = 'equal_size'  # Automatically use 'equal_size' strategy when num_parcels is specified
+    if args.num_parcel_list is not None:
+        strategy = 'equal_size'  # Automatically use 'equal_size' strategy when num_parcel_list is specified
     else:
         strategy = args.strategy  # Use the strategy provided for parcel_size
 
-    # Process the parcel_size_list or num_parcels argument
+    # Process the parcel_size_list or num_parcel_list argument
     if args.parcel_size_list:
         if os.path.exists(args.parcel_size_list):
             parcel_size_list = file_to_list(args.parcel_size_list)
@@ -231,6 +237,12 @@ def main():
             num_parcel_list = [s.strip() for s in args.num_parcel_list.split(',')]
         num_parcel_list = [int(s) for s in num_parcel_list]
         parcel_size_list = [None] * len(num_parcel_list)
+
+    # if args.parcel_size_list is used the suffix will be parcel_size_{parcel_size}
+    if args.parcel_size_list:
+        output_subfolder_suffix = 'parcel_size'
+    else:
+        output_subfolder_suffix = 'num_parcels'
 
     if args.mask is not None:
         args.mask = os.path.abspath(args.mask)
@@ -261,18 +273,22 @@ def main():
     # match +-10% size random in the pool
     parcels_size_dict = {}
     for parcel_size, number_parcels in zip(parcel_size_list, num_parcel_list):
+        if output_subfolder_suffix == 'parcel_size':
+            output_subfolder = Path(args.output, f'{output_subfolder_suffix}_{parcel_size}')
+        else:
+            output_subfolder =  Path(args.output, f'{output_subfolder_suffix}_{number_parcels}_parcels')
         if parcel_size is not None:
             print(f'Running {args.method} with parcel size = {parcel_size}')
             parcels_img = create_parcel_set(
                 coverage_mask, parcel_size=int(parcel_size),
-                output_path=os.path.join(args.output, f'parcellation_size_{parcel_size}.nii.gz'),
+                output_path=output_subfolder,
                 method=args.method, strategy=strategy
             )
         else:
             print(f'Running {args.method} with num_parcels = {number_parcels}')
             parcels_img = create_parcel_set(
                 coverage_mask, num_parcels=number_parcels,
-                output_path=os.path.join(args.output, f'parcellation_{number_parcels}_parcels.nii.gz'),
+                output_path=output_subfolder,
                 method=args.method, strategy=strategy
             )
         if parcels_img is None:
@@ -301,13 +317,36 @@ def main():
             print(f'Parcel size: {parcel_size}, Max value in parcel: {parcel_max}')
 
             file_name = f'parcel_{parcel_size}_cluster{parcel_max}.nii.gz'
-            file_path = os.path.join(args.output, file_name)
-            parcels_size_dict[parcel_size] = [file_path]
+            file_path = Path(output_subfolder, file_name)
+            if parcel_size in parcels_size_dict:
+                parcels_size_dict[parcel_size].append(str(file_path))
+            else:
+                parcels_size_dict[parcel_size] = [str(file_path)]
 
             nib.save(parcel, file_path)
-    with open(os.path.join(args.output, '__parcels_dict.json'), 'w+') as out_file:
-        json.dump(parcels_size_dict, out_file, indent=4)
+        with open(Path(output_subfolder, '__parcels_dict.json'), 'w+') as out_file:
+            json.dump(parcels_size_dict, out_file, indent=4)
 
 
 if __name__ == '__main__':
+    """
+    # KMeans with Parcel Size List
+    parcitron -p "$path" -o "${output_path}/KMeans_parcel_sizes" --method KMeans -rsl 30000,50000 --random_state 42
+
+    # KMeans with Number of Parcels
+    parcitron -p "$path" -o "${output_path}/KMeans_num_parcels" --method KMeans -np 50 --random_state 42
+
+    # Compactor with Fixed Size (Non-Contiguous)
+    parcitron -p "$path" -o "${output_path}/Compactor_fixed_noncontig" --method compactor -rsl 30000 --strategy fixed_size --random_state 42
+
+    # Compactor with Fixed Size (Contiguous)
+    parcitron -p "$path" -o "${output_path}/Compactor_fixed_contig" --method compactor -rsl 30000 --strategy fixed_size --contiguous --random_state 42
+
+    # Compactor with Balanced Size (Non-Contiguous)
+    parcitron -p "$path" -o "${output_path}/Compactor_balanced_noncontig" --method compactor -rsl 30000 --strategy balanced_size --random_state 42
+
+    # Compactor with Balanced Size (Contiguous)
+    parcitron -p "$path" -o "${output_path}/Compactor_balanced_contig" --method compactor -rsl 30000 --strategy balanced_size --contiguous --random_state 42
+
+    """
     main()
