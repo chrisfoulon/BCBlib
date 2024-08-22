@@ -417,7 +417,7 @@ def main():
             parcel_sizes = int(parcel_sizes) if parcel_sizes is not None else custom_sizes
             # if we use custom sizes we just say "custom sizes" in the print
             string_end = f'custom sizes' if custom_sizes is not None else f'{parcel_sizes}'
-            print(f'Running {args.method} with parcel size = {string_end}')
+            print(f'Running {args.method} with parcel size: {string_end}')
             parcels_img = create_parcel_set(
                 coverage_mask, parcel_sizes=parcel_sizes,
                 output_path=output_subfolder,

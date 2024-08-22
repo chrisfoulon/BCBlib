@@ -170,8 +170,9 @@ def divide_compactor(img, sizes, random_labels=False, random_first_seed=False, c
     -----
     - If `random_labels` is True, the cluster labels are assigned in a random order.
     - If `random_first_seed` is True, the first seed voxel is chosen randomly from the available voxels.
-    - If `contiguous_clusters` is True, the function will attempt to create clusters where all voxels are spatially connected.
-      In cases where there are fewer contiguous voxels than required, the cluster will be smaller than the specified size.
+    - If `contiguous_clusters` is True, the function will attempt to create clusters where all voxels are spatially
+    connected. In cases where there are fewer contiguous voxels than required, the cluster will be smaller than the
+    specified size.
     - The function handles any leftover voxels by assigning them to a final cluster.
     """
     # Extract coordinates of non-zero voxels
