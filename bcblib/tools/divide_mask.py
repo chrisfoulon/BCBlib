@@ -1,4 +1,26 @@
 # -*- coding: utf-8 -*-
+"""
+This script provides a method to cluster non-zero voxels in a 3D image (Nifti format) into groups of specified sizes. The clusters can be made contiguous, ensuring that the voxels in each cluster are spatially connected, or non-contiguous, where clusters consist of the nearest neighbors in the voxel space without enforcing spatial connectivity.
+
+Key Features:
+- **Random Seed Selection:** The initial seed voxel for clustering can be selected randomly or based on a fixed criterion.
+- **Contiguous Clustering:** The algorithm can enforce contiguity in clusters, ensuring all voxels within a cluster are spatially connected.
+- **Random Label Assignment:** Cluster labels can be assigned randomly or sequentially.
+- **Custom Cluster Sizes:** The user can specify the exact size of each cluster.
+
+Functions:
+- `find_seed(coords, direc)`: Identifies the most distant voxel in a given direction from the list of coordinates.
+- `find_next_seed(coords, tree)`: Randomly selects the next seed voxel from the remaining unclustered voxels.
+- `gather_round(seed, coords, size, tree, contiguous_clusters)`: Collects the nearest voxels to a seed, optionally ensuring that the collected voxels form a contiguous cluster.
+- `divide_compactor(img, sizes, random_labels=False, random_first_seed=False, contiguous_clusters=False)`: Divides the input image into clusters based on specified sizes, with options for random seed selection, contiguous clustering, and random label assignment.
+
+Potential Edge Cases:
+1. **Insufficient Contiguous Voxels:** If there are fewer contiguous voxels available than the specified cluster size, the script will issue a warning and create a smaller cluster. This can happen near the edges of the mask or in regions with sparse voxel density.
+2. **Exact Cluster Sizes:** If the total number of voxels does not divide evenly by the specified sizes, the last cluster may have more or fewer voxels than intended.
+3. **Random Seed Selection:** While random seed selection helps avoid biases, it may lead to less predictable cluster shapes, especially in the first few clusters.
+4. **KDTree Limitations:** The script assumes isotropic voxel spacing; if the voxel grid is anisotropic, the KDTree distance calculations may not accurately reflect true spatial distances, potentially leading to elongated clusters.
+5. **Remaining Voxels:** The script handles any leftover voxels after clustering by assigning them to a final cluster. If the number of remaining voxels is small, this cluster may be disproportionately small compared to the others.
+"""
 import heapq
 
 import numpy as np
@@ -59,22 +81,34 @@ def find_next_seed(coords, tree):
 
 
 def gather_round(seed, coords, size, tree, contiguous_clusters=False):
-    """ Find the nearest voxels from the seed using KDTree and return an array of their indices.
+    """
+    Find the nearest voxels from the seed using KDTree and return an array of their indices.
+
     Parameters
     ----------
-    seed: np.array
-        array([x,y,z]) an array of the coordinates of the seed voxel
-        of the cluster
-    coords: np.array (coordinates of each voxel on lines)
-        coordinates of voxels in the mask
-    size: int
-        size of the cluster. If there isn't enough coordinates, the function
-        will still return a cluster but with less voxels
+    seed : np.array
+        An array representing the coordinates of the seed voxel for the current cluster.
+    coords : np.array
+        An array of coordinates of voxels in the mask.
+    size : int
+        The desired size of the cluster. If not enough coordinates are available, the function will return a smaller cluster.
+    tree : KDTree
+        KDTree built from the coordinates of the voxels.
+    contiguous_clusters : bool, optional
+        If True, enforce that the clusters are contiguous, meaning all voxels in a cluster must be spatially connected.
+
     Returns
     -------
     np.array
-        array with the indixes of the nearest voxels(in coords) from seed
-        (the array contains seed)
+        An array of indices corresponding to the selected cluster voxels.
+    np.array
+        An array of coordinates corresponding to the selected cluster voxels.
+
+    Notes
+    -----
+    When `contiguous_clusters` is True, the function uses a priority queue to ensure that voxels are added to the cluster
+    based on their spatial proximity, starting from the seed and expanding outwards. If not enough contiguous voxels are
+    found to meet the requested cluster size, a smaller cluster is returned.
     """
     if contiguous_clusters:
         cluster_coords = []
@@ -111,33 +145,47 @@ def gather_round(seed, coords, size, tree, contiguous_clusters=False):
 
 
 def divide_compactor(img, sizes, random_labels=False, random_first_seed=False, contiguous_clusters=False):
-    # TODO add an option to force clusters contiguity
-    #  (testing that the input mask is fully contiguous).
-    # TODO Also add an option to allow for a random first seed.
-    """ Cluster img in groups of a given number of neighbour voxels (Be sure to use a skull stripped image as the
-    function divides all non-zero voxel)
+    """
+    Cluster the non-zero voxels in a Nifti image into groups of specified sizes.
+
     Parameters
     ----------
-    img: Nifti1Image
-        The nifti mask of non-zero voxels to cluster
-    size: int
-        The size of each cluster (The last cluster can have a lower number
-        of voxels)
-    random_labels: bool
-        (default: False) generate the labels randomly or not
-    random_first_seed: bool
-        (default: False) use a random seed or not
-    contiguous_clusters: bool
-        (default: False) force the clusters to be contiguous or not
+    img : Nifti1Image
+        The Nifti mask image containing non-zero voxels to cluster.
+    sizes : list of int
+        A list of integers specifying the size of each cluster.
+    random_labels : bool, optional
+        If True, assign cluster labels randomly. Otherwise, labels are assigned sequentially.
+    random_first_seed : bool, optional
+        If True, select the initial seed voxel randomly. Otherwise, start with the first voxel in the list.
+    contiguous_clusters : bool, optional
+        If True, enforce that the clusters are contiguous, meaning all voxels in a cluster must be spatially connected.
+
     Returns
     -------
-    res_img: Nifti1Image
-        An image with the same dimension than img and its voxels labelled with
-        their cluster number
-    """
-    coords = np.asarray(np.where(img.get_fdata())).T
-    res_data = np.zeros(img.shape)
+    Nifti1Image
+        A Nifti image with the same dimensions as `img`, where the voxels are labeled according to their cluster.
 
+    Notes
+    -----
+    - If `random_labels` is True, the cluster labels are assigned in a random order.
+    - If `random_first_seed` is True, the first seed voxel is chosen randomly from the available voxels.
+    - If `contiguous_clusters` is True, the function will attempt to create clusters where all voxels are spatially connected.
+      In cases where there are fewer contiguous voxels than required, the cluster will be smaller than the specified size.
+    - The function handles any leftover voxels by assigning them to a final cluster.
+    """
+    # Extract coordinates of non-zero voxels
+    coords = np.asarray(np.where(img.get_fdata())).T
+
+    # Check if the mask is empty or too small
+    if len(coords) == 0:
+        raise ValueError("The mask is empty. No voxels to cluster.")
+
+    if len(coords) < min(sizes):
+        raise ValueError("The mask has fewer voxels than the smallest requested cluster size.")
+
+    # Proceed with clustering if the mask is valid
+    res_data = np.zeros(img.shape)
     label_list = list(range(1, len(sizes) + 1))
     if random_labels:
         random.shuffle(label_list)
@@ -164,7 +212,6 @@ def divide_compactor(img, sizes, random_labels=False, random_first_seed=False, c
 
         # Use numpy indexing to assign labels
         res_data[tuple(tmp_clu_coords.T)] = label
-        print(f'Number of voxels with label {label}: {len(res_data[res_data == label])}')
 
         # Remove the clustered points from coords
         coords = np.delete(coords, tmp_clu_indices, axis=0)
