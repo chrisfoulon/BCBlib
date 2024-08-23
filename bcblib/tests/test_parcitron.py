@@ -3,6 +3,7 @@ import sys
 import os
 from pathlib import Path
 import argparse
+from nilearn import datasets
 
 
 def run_command(command):
@@ -23,46 +24,61 @@ def check_output_dir(output_dir):
 
 
 def test_parcitron(input_arg, input_value, output_path):
+    # Determine the directory where the current script is located
+    script_dir = Path(__file__).parent
+
+    # Path to the file containing the voxel paths
+    yeo_7_networks_voxels_path = script_dir / "yeo_7_networks_voxels.txt"
+    yeo_17_networks_voxels_path = script_dir / "yeo_17_networks_voxels.txt"
+
     commands = [
         # KMeans with Parcel Size List
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/KMeans_parcel_sizes" --method KMeans '
-        f'-rsl 30000,50000 --random_state 42',
+        f'-rsl 150000,62000 --random_state 42',
 
         # KMeans with Number of Parcels
-        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/KMeans_num_parcels" --method KMeans -np 50 '
+        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/KMeans_num_parcels" --method KMeans -np 7,17 '
         f'--random_state 42',
 
         # Compactor with Fixed Size (Non-Contiguous)
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_fixed_noncontig" --method compactor '
-        f'-rsl 30000 --strategy fixed_size --random_state 42',
+        f'-rsl 150000,62000 --strategy fixed_size --random_state 42',
 
         # Compactor with Fixed Size (Contiguous)
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_fixed_contig" --method compactor '
-        f'-rsl 30000 --strategy fixed_size --contiguous --random_state 42',
+        f'-rsl 150000,62000 --strategy fixed_size --contiguous --random_state 42',
 
         # Compactor with Balanced Size (Non-Contiguous)
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_balanced_noncontig" --method compactor '
-        f'-rsl 30000 --strategy balanced_size --random_state 42',
+        f'-rsl 150000,62000 --strategy balanced_size --random_state 42',
 
         # Compactor with Balanced Size (Contiguous)
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_balanced_contig" --method compactor '
-        f'-rsl 30000 --strategy balanced_size --contiguous --random_state 42',
+        f'-rsl 150000,62000 --strategy balanced_size --contiguous --random_state 42',
 
         # Compactor with Number of Parcels (Non-Contiguous)
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_num_parcels_noncontig" --method compactor '
-        f'-np 20,30,50,100 --random_state 42',
+        f'-np 7,17 --random_state 42',
 
         # Compactor with Number of Parcels (Contiguous)
         f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_num_parcels_contig" --method compactor '
-        f'-np 50 --contiguous --random_state 42',
+        f'-np 7,17 --contiguous --random_state 42',
 
-        # Compactor with Custom Sizes (Contiguous)
-        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_custom_sizes_contig" --method compactor '
-        f'-cs 2000,4000,5000,2500 --contiguous --random_state 42',
+        # Compactor with Custom Sizes (Contiguous) 7 Networks
+        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_custom_sizes_contig_7" --method compactor '
+        f'-cs {yeo_7_networks_voxels_path} --contiguous --random_state 42',
 
-        # Compactor with Custom Sizes (Non-Contiguous)
-        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_custom_sizes_noncontig" --method compactor '
-        f'-cs 2000,4000,5000,2500 --random_state 42',
+        # Compactor with Custom Sizes (Contiguous) 17 Networks
+        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_custom_sizes_contig_17" '
+        f'--method compactor -cs {yeo_17_networks_voxels_path} --contiguous --random_state 42',
+
+        # Compactor with Custom Sizes (Non-Contiguous) 7 Networks
+        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_custom_sizes_noncontig_7" '
+        f'--method compactor -cs {yeo_7_networks_voxels_path} --random_state 42',
+
+        # Compactor with Custom Sizes (Non-Contiguous) 17 Networks
+        f'parcitron -{input_arg} "{input_value}" -o "{output_path}/Compactor_custom_sizes_noncontig_17" '
+        f'--method compactor -cs {yeo_17_networks_voxels_path} --random_state 42',
     ]
 
     # Run each command and check the corresponding output directory
@@ -83,5 +99,12 @@ if __name__ == "__main__":
 
     print("Arguments:", sys.argv)
     args = parser.parse_args()
+
+    if args.input_arg == 'default':
+        yeo_atlas = datasets.fetch_atlas_yeo_2011(data_dir=None, url=None, resume=True, verbose=1)
+        # Path to the 17-network parcellation NIfTI file, we are only using it to make the mask
+        yeo_17_nifti_path = yeo_atlas.thick_17
+        args.input_arg = 'm'
+        args.input_value = yeo_17_nifti_path
 
     test_parcitron(args.input_arg, args.input_value, args.output_path)

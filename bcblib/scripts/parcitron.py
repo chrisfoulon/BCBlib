@@ -194,7 +194,8 @@ def create_parcel_set(coverage_mask, parcel_sizes=None, num_parcels=None, output
     elif isinstance(parcel_sizes, Sequence):
         sizes = parcel_sizes
         if sum(sizes) > len(mask_coord):
-            raise ValueError("The sum of custom sizes exceeds the number of voxels in the mask.")
+            raise ValueError(f'The sum of the parcel sizes ({sum(sizes)}) is greater than the number of points '
+                             f'in the mask ({len(mask_coord)}).')
     elif num_parcels is not None:
         sizes = determine_parcels(len(mask_coord), num_parcels=num_parcels, strategy=strategy)
     else:
