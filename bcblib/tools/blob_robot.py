@@ -2,6 +2,7 @@ from pathlib import Path
 from functools import partial
 
 import numpy as np
+from joblib import Parallel, delayed
 from scipy import ndimage
 
 """
@@ -81,6 +82,30 @@ def coord_in_array(coord, array):
     return in_arr
 
 
+def create_spherical_shape(radius):
+    """
+    Create a 3D binary array with a spherical shape.
+
+    Parameters
+    ----------
+    radius : int
+        The radius of the sphere.
+
+    Returns
+    -------
+    np.ndarray
+        A 3D binary array with a spherical shape.
+    """
+    # Define the grid
+    diameter = 2 * radius + 1
+    grid = np.ogrid[-radius:radius + 1, -radius:radius + 1, -radius:radius + 1]
+
+    # Create a binary sphere
+    sphere = grid[0] ** 2 + grid[1] ** 2 + grid[2] ** 2 <= radius ** 2
+
+    return sphere.astype(int)
+
+
 def create_shapes_in_arr(cell_array, coords=1, structure=None, connectivity=None, dimensions=3, value=1, it_time=0):
     """
     Create shapes in an array of cells.
@@ -143,27 +168,120 @@ def get_neighbours(array, cell_coord, out_of_bound_values=0):
     return neighbours_arr
 
 
-def create_neighbours_array(state_array, footprint=None, neighbourhood='moore', out_of_bound_values=0):
+def initialize_cell_array_with_mask(shape, mask, seed_coords, seed_values, seed_shape=None, spawnable_value=0,
+                                    non_spawnable_value=-1):
     """
-    Create an array of the number of neighbours for each cell in the state_array.
-    The neighbourhood can be either 'moore' or 'von_neumann' (not implemented yet).
-    The footprint is the shape of the neighbourhood.
+    Initialize the cell array with a mask and seed values. Each seed can take a specified shape.
+
     Parameters
     ----------
-    state_array: np.ndarray
-    footprint: np.ndarray
-    neighbourhood: str
-    out_of_bound_values: int
+    shape : tuple
+        The shape of the cell array.
+    mask : np.ndarray
+        A binary mask indicating spawnable areas (1) and non-spawnable areas (0).
+    seed_coords : list of tuples
+        The coordinates of the seeds.
+    seed_values : list of ints
+        The values (cluster indices) for each seed.
+    seed_shape : np.ndarray, optional
+        A binary array defining the shape of each seed. The shape must fit within the cell array.
+    spawnable_value : int, optional
+        The value for spawnable cells.
+    non_spawnable_value : int, optional
+        The value for non-spawnable cells.
 
     Returns
     -------
-
+    np.ndarray
+        The initialized cell array.
     """
-    if footprint is None and neighbourhood == 'moore':
-        footprint = np.ones((3,) * 3)
-        footprint[1, 1, 1] = 0
-    return ndimage.generic_filter(state_array, np.count_nonzero, footprint=footprint, mode='constant',
-                                  cval=out_of_bound_values)
+    cell_array = np.empty(shape, dtype=object)
+
+    # Initialize the cell array based on the mask
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index'], op_flags=['readwrite']) as it:
+        for c in it:
+            coord = it.multi_index
+            if mask[coord] == 1:
+                c[...] = Cell(spawnable_value)
+            else:
+                c[...] = Cell(non_spawnable_value)
+
+    # Handle the placement of seeds with the specified shape
+    for seed_coord, seed_value in zip(seed_coords, seed_values):
+        if seed_shape is not None:
+            seed_shape_coords = np.argwhere(seed_shape)
+            for offset in seed_shape_coords:
+                target_coord = tuple(np.array(seed_coord) + offset - np.array(seed_shape.shape) // 2)
+                if coord_in_array(target_coord, cell_array) and mask[target_coord] == 1:
+                    current_cell = cell_array[target_coord]
+                    if current_cell.get_state() == spawnable_value:
+                        current_cell.set_next_state(seed_value, it_time=0)
+                        current_cell.update_state()
+        else:
+            # If no shape is specified, just place a single cell
+            cell_array[seed_coord].set_next_state(seed_value, it_time=0)
+            cell_array[seed_coord].update_state()
+
+    return cell_array
+
+
+def create_neighbours_array(state_array, footprint=None, neighbourhood='moore', out_of_bound_values=0):
+    """
+    Create an array of the number of neighbours for each cell in the state_array.
+    The neighbourhood can be either 'moore' or 'von_neumann'.
+
+    Parameters
+    ----------
+    state_array: np.ndarray
+    footprint: np.ndarray (optional)
+    neighbourhood: str (optional)
+    out_of_bound_values: int (optional)
+
+    Returns
+    -------
+    np.ndarray
+        An array with the same shape as `state_array`, where each element
+        contains the number of neighbors for the corresponding cell in the input array.
+    """
+    if footprint is None:
+        if neighbourhood == 'moore':
+            footprint = ndimage.generate_binary_structure(rank=state_array.ndim, connectivity=3)
+        elif neighbourhood in ['von_neumann', 'von neumann', 'vn', 'n']:
+            footprint = ndimage.generate_binary_structure(rank=state_array.ndim, connectivity=1)
+
+    # Ensure the cell itself is not counted as a neighbor
+    footprint[tuple([1] * state_array.ndim)] = 0
+
+    # Using convolve might be faster than generic_filter if the operation is simple
+    neighbours_array = ndimage.convolve(state_array, footprint, mode='constant', cval=out_of_bound_values)
+    # return ndimage.generic_filter(state_array, np.count_nonzero, footprint=footprint, mode='constant',
+    #                               cval=out_of_bound_values)
+    return neighbours_array
+
+
+def check_rule(rule, neighbours_count):
+    """
+    Check if the rule is satisfied by the number of neighbours.
+    Parameters
+    ----------
+    rule : int or list
+    neighbours_count : int
+
+    Returns
+    -------
+    bool : True if the rule is satisfied, False otherwise
+    """
+    if isinstance(rule, int):
+        return neighbours_count == rule
+    else:
+        for value in rule:
+            if isinstance(value, range):
+                if value.start <= neighbours_count < value.stop:
+                    return True
+            else:
+                if neighbours_count == value:
+                    return True
+    return False
 
 
 # TODO there could be a bunch of other strategies for the spawn and states
@@ -205,51 +323,20 @@ def apply_rule_to_cell(array, cell_coord, neighbour_array, it_time, rule=(4, 2, 
     survive_rule = rule[0]
     spawn_rule = rule[1]
     num_states = rule[2]
-    neighbourhood_method = 'moore'
-    if len(rule) == 4:
-        if rule[3].lower() in ['n', 'vn', 'von_neumann', 'von neumann']:
-            neighbourhood_method = 'von_neumann'
-    if neighbourhood_method == 'moore':
-        cell_state = cell.get_state()
-        new_state = cell_state
-        # TODO Add overpopulation cell death
-        if cell_state:
-            # Here the cell either survives or fades/dies
-            fades = False
-            if isinstance(survive_rule, int):
-                if neighbours_count == survive_rule:
-                    fades = True
-            else:
-                fades = True
-                for value in survive_rule:
-                    if isinstance(value, range):
-                        if not value.start <= neighbours_count < value.stop:
-                            fades = False
-                    else:
-                        if neighbours_count != value:
-                            fades = False
-            if fades:
-                new_state -= 1
-        else:
-            # Here the cell can spawn
-            spawns = False
-            if isinstance(spawn_rule, int):
-                if neighbours_count == spawn_rule:
-                    spawns = True
-            else:
-                spawns = False
-                for value in spawn_rule:
-                    if isinstance(value, range):
-                        if value.start <= neighbours_count < value.stop:
-                            spawns = True
-                    else:
-                        if neighbours_count == value:
-                            spawns = True
-            if spawns:
-                new_state = num_states - 1
-    else:
-        # TODO
-        new_state = cell.get_state()
+
+    cell_state = cell.get_state()
+    new_state = cell_state
+
+    if cell_state:  # The cell is alive
+        fades = check_rule(survive_rule, neighbours_count)
+        if fades:
+            new_state -= 1
+    else:  # The cell is dead
+        spawns = check_rule(spawn_rule, neighbours_count)
+        if spawns:
+            new_state = num_states - 1
+
+    # Apply the new state to the cell
     cell.set_next_state(new_state, it_time)
     
 
@@ -274,6 +361,150 @@ def evolve_automaton(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
             if c.item().get_state():
                 acc += 1
             apply_rule_to_cell(cell_array, it.multi_index, neighbour_array, it_time, rule=rule)
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        for c in it:
+            c.item().update_state()
+
+
+def apply_growth_rule(array, cell_coord, neighbour_array, it_time):
+    """
+    Apply the growth rule to a cell, ensuring that it spreads its value only to spawnable cells.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The array representing the cellular automaton grid.
+    cell_coord : tuple
+        The coordinates of the cell in the array.
+    neighbour_array : np.ndarray
+        An array of the same shape as `array`, containing the number of neighbors for each cell.
+    it_time : int
+        The current iteration time.
+
+    Returns
+    -------
+    None
+    """
+    cell = array[cell_coord]
+    cell_state = cell.get_state()
+
+    if cell_state <= 0:
+        return  # Skip non-spawnable cells and empty cells
+
+    neighbours_count = neighbour_array[cell_coord]
+
+    # Spread the cell's value to its neighbors if they are spawnable (i.e., state == 0)
+    spreadable_cells = []
+    for offset in np.argwhere(ndimage.generate_binary_structure(rank=3, connectivity=1)):
+        neighbour_coord = tuple(np.array(cell_coord) + offset - 1)
+        if neighbour_coord == cell_coord:
+            continue  # Skip if the neighbor coordinate is the same as the current cell coordinate
+        if coord_in_array(neighbour_coord, array) and array[neighbour_coord].get_state() == 0:
+            spreadable_cells.append(neighbour_coord)
+
+    for coord in spreadable_cells:
+        array[coord].set_next_state(cell_state, it_time)
+
+    cell.update_state()
+
+
+def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time):
+    """
+    Apply a viscous growth rule to simulate a liquid-like spreading.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The array representing the cellular automaton grid.
+    cell_coord : tuple
+        The coordinates of the cell in the array.
+    neighbour_array : np.ndarray
+        An array of the same shape as `array`, containing the number of neighbors for each cell.
+    it_time : int
+        The current iteration time.
+
+    Returns
+    -------
+    None
+    """
+    cell = array[cell_coord]
+    cell_state = cell.get_state()
+
+    if cell_state <= 0:
+        return  # Skip non-spawnable cells and empty cells
+
+    # Viscosity factor: decrease the chance of spreading in dense areas
+    viscosity = 1 / (1 + neighbour_array[cell_coord])
+
+    neighbour_offsets = np.argwhere(ndimage.generate_binary_structure(rank=3, connectivity=1))
+    np.random.shuffle(neighbour_offsets)
+
+    for offset in neighbour_offsets:
+        neighbour_coord = tuple(np.array(cell_coord) + offset - 1)
+        if coord_in_array(neighbour_coord, array) and array[neighbour_coord].get_state() == 0:
+            if np.random.rand() < viscosity:
+                array[neighbour_coord].set_next_state(cell_state, it_time)
+                break  # Spread to only one neighbor per iteration to simulate fluid, controlled growth
+
+    cell.update_state()
+
+
+
+def evolve_parcellation(cell_array, it_time):
+    """
+    Evolve the automaton one step forward for parcellation.
+
+    Parameters
+    ----------
+    cell_array : np.ndarray
+        The array representing the cellular automaton grid.
+    it_time : int
+        The current iteration time.
+
+    Returns
+    -------
+    None
+    """
+    neighbour_array = create_neighbours_array(cell_array_to_state_array(cell_array))
+
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        for c in it:
+            apply_growth_rule(cell_array, it.multi_index, neighbour_array, it_time)
+
+    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
+        for c in it:
+            c.item().update_state()
+
+
+def evolve_parcellation_opti(cell_array, it_time, growth_rule='default'):
+    """
+    Optimized function to evolve the cellular automaton for parcellation using parallel processing.
+
+    Parameters
+    ----------
+    cell_array : np.ndarray
+        The array representing the cellular automaton grid.
+    it_time : int
+        The current iteration time.
+
+    Returns
+    -------
+    None
+    """
+    state_array = cell_array_to_state_array(cell_array)
+    neighbour_array = create_neighbours_array(state_array)
+
+    # Iterate only over cells that are active (i.e., not in state 0)
+    active_cells = np.argwhere(state_array > 0)
+
+    for coord in active_cells:
+        coord = tuple(coord)  # Convert from numpy array to tuple
+        if growth_rule == 'viscous':
+            apply_viscous_growth_rule(cell_array, coord, neighbour_array, it_time)
+        elif growth_rule == 'default':
+            apply_growth_rule(cell_array, coord, neighbour_array, it_time)
+
+    # Update the state of all cells in one go
     with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
         for c in it:
             c.item().update_state()
