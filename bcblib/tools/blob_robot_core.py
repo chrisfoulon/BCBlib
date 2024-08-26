@@ -2,7 +2,6 @@ from pathlib import Path
 from functools import partial
 
 import numpy as np
-from joblib import Parallel, delayed
 from scipy import ndimage
 
 from bcblib.tools.arrays_utils import coord_in_array
@@ -54,16 +53,14 @@ def initialize_cell_array_with_mask(shape, mask, seed_coords, seed_values, seed_
     np.ndarray
         The initialized cell array.
     """
-    cell_array = np.empty(shape, dtype=object)
+    def create_cell(x, y, z):
+        if mask[x, y, z] == 1:
+            return Cell(spawnable_value)
+        else:
+            return Cell(non_spawnable_value)
 
-    # Initialize the cell array based on the mask
-    with np.nditer(cell_array, flags=['refs_ok', 'multi_index'], op_flags=['readwrite']) as it:
-        for c in it:
-            coord = it.multi_index
-            if mask[coord] == 1:
-                c[...] = Cell(spawnable_value)
-            else:
-                c[...] = Cell(non_spawnable_value)
+    vectorized_create_cell = np.vectorize(create_cell, otypes=[object])
+    cell_array = vectorized_create_cell(*np.indices(shape))
 
     # Handle the placement of seeds with the specified shape
     for seed_coord, seed_value in zip(seed_coords, seed_values):
@@ -156,14 +153,13 @@ def cell_array_to_state_array(cell_array, value_mode='state'):
     -------
 
     """
-    state_array = np.zeros_like(cell_array, dtype=int)
-    with np.nditer(cell_array, flags=['refs_ok', 'multi_index']) as it:
-        for c in it:
-            if value_mode == 'state':
-                state_array[it.multi_index] = c.item().get_state()
-            if value_mode == 'spawn':
-                state_array[it.multi_index] = c.item().get_state() + c.item().get_spawn()
-    return state_array
+    get_state_vectorized = np.vectorize(lambda cell: cell.get_state())
+    get_spawn_vectorized = np.vectorize(lambda cell: cell.get_state() + cell.get_spawn())
+
+    if value_mode == 'state':
+        return get_state_vectorized(cell_array)
+    elif value_mode == 'spawn':
+        return get_spawn_vectorized(cell_array)
 
 
 def create_cell_array(shape, init_state=0):
@@ -179,32 +175,72 @@ def create_cell_array(shape, init_state=0):
     -------
 
     """
-    cell_array = np.empty(shape, dtype=object)
-    with np.nditer(cell_array, flags=['refs_ok', 'multi_index'], op_flags=['readwrite']) as it:
-        for c in it:
-            c[...] = Cell(init_state)
-    return cell_array
+
+    def create_cell(x, y, z):
+        return Cell(init_state)
+
+    vectorized_create_cell = np.vectorize(create_cell, otypes=[object])
+    return vectorized_create_cell(*np.indices(shape))
 
 # TODO Make a 2D slice growth mode where the 3D automata would simply be the different states of a 2D CA evolution
 # TODO Have a sliced growth (neighbourhood only on the slice) starting from a couple of random cells on each slice
 
 
-def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=None):
+def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=None, seed_shape=None):
+    """
+    Initialize the cell array with a mask and seed values, and create Blob instances with optional shapes.
+
+    Parameters
+    ----------
+    shape : tuple
+        The shape of the cell array.
+    mask : np.ndarray
+        A binary mask indicating spawnable areas (1) and non-spawnable areas (0).
+    seed_coords : list of tuples
+        The coordinates of the seeds.
+    seed_values : list of ints
+        The values (cluster indices) for each seed.
+    max_size : int, optional
+        The maximum size of each blob. If None, blobs can grow indefinitely.
+    seed_shape : np.ndarray, optional
+        A binary array defining the shape of each seed. The shape must fit within the cell array.
+
+    Returns
+    -------
+    blobs : list
+        A list of Blob instances.
+    cell_array : np.ndarray
+        The initialized cell array.
+    """
+    # Initialize the cell array using vectorization
+    def create_cell(x, y, z):
+        if mask[x, y, z] == 1:
+            return Cell(0)  # Spawnable cells
+        else:
+            return Cell(-1)  # Non-spawnable cells
+
+    vectorized_create_cell = np.vectorize(create_cell, otypes=[object])
+    cell_array = vectorized_create_cell(*np.indices(shape))
+
+    # Create Blob instances and initialize the seeds with optional shapes
     blobs = []
-    cell_array = np.empty(shape, dtype=object)
-
-    with np.nditer(cell_array, flags=['refs_ok', 'multi_index'], op_flags=['readwrite']) as it:
-        for c in it:
-            coord = it.multi_index
-            if mask[coord] == 1:
-                c[...] = Cell()
-            else:
-                c[...] = Cell(non_spawnable_value=-1)
-
     for seed_coord, seed_value in zip(seed_coords, seed_values):
         blob = Blob(seed_coord, seed_value, max_size)
         blobs.append(blob)
-        cell_array[seed_coord].set_next_state(seed_value, it_time=0)
-        cell_array[seed_coord].update_state()
+
+        if seed_shape is not None:
+            # Apply the seed shape around the seed_coord
+            seed_shape_coords = np.argwhere(seed_shape)
+            for offset in seed_shape_coords:
+                target_coord = tuple(np.array(seed_coord) + offset - np.array(seed_shape.shape) // 2)
+                if coord_in_array(target_coord, cell_array) and mask[target_coord] == 1:
+                    cell_array[target_coord].set_next_state(seed_value, it_time=0)
+                    cell_array[target_coord].update_state()
+                    blob.edge_cells.add(target_coord)
+        else:
+            # If no shape is specified, just place a single cell
+            cell_array[seed_coord].set_next_state(seed_value, it_time=0)
+            cell_array[seed_coord].update_state()
 
     return blobs, cell_array
+

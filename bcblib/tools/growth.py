@@ -165,6 +165,7 @@ def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time):
             if np.random.rand() < viscosity:
                 array[neighbour_coord].set_next_state(cell_state, it_time)
                 break  # Spread to only one neighbor per iteration to simulate fluid, controlled growth
+                # TODO that might be a bit too viscous, maybe we should spread to more than one neighbour
 
     cell.update_state()
 
@@ -197,7 +198,7 @@ def evolve_parcellation(cell_array, it_time):
 
 def evolve_parcellation_opti(cell_array, it_time, growth_rule='default'):
     """
-    Optimized function to evolve the cellular automaton for parcellation using parallel processing.
+    Optimized function to evolve the cellular automaton for parcellation
 
     Parameters
     ----------
@@ -205,6 +206,8 @@ def evolve_parcellation_opti(cell_array, it_time, growth_rule='default'):
         The array representing the cellular automaton grid.
     it_time : int
         The current iteration time.
+    growth_rule : str
+        The growth rule to apply. Either 'default' or 'viscous'.
 
     Returns
     -------
@@ -229,9 +232,71 @@ def evolve_parcellation_opti(cell_array, it_time, growth_rule='default'):
             c.item().update_state()
 
 
+
+def grow_blob(blob, cell_array, it_time, neighbour_array):
+    """
+    Perform one growth iteration for the blob using the evolve_parcellation_opti_subset function.
+
+    Parameters
+    ----------
+    blob : Blob
+        The Blob instance that needs to grow.
+    cell_array : np.ndarray
+        The array representing the cellular automaton grid.
+    it_time : int
+        The current iteration time.
+    neighbour_array : np.ndarray
+        The array representing the number of neighbors for each cell.
+    """
+    if not blob.can_grow():
+        return
+
+    evolve_parcellation_opti_subset(cell_array,
+                                    list(blob.edge_cells),
+                                    neighbour_array,
+                                    it_time,
+                                    growth_rule='default')
+
+    blob.update_edge(cell_array, neighbour_array)
+    blob.size = len(blob.edge_cells)
+
+
+def evolve_parcellation_opti_subset(cell_array, edge_cells, neighbour_array, it_time, growth_rule='default'):
+    """
+    Optimized function to evolve the cellular automaton for parcellation on a subset of cells.
+
+    Parameters
+    ----------
+    cell_array : np.ndarray
+        The array representing the cellular automaton grid.
+    edge_cells : list of tuples
+        List of coordinates to be processed.
+    neighbour_array : np.ndarray
+        The neighbor array representing the number of neighbors for each cell.
+    it_time : int
+        The current iteration time.
+    growth_rule : str, optional
+        The growth rule to apply, either 'default' or 'viscous'.
+
+    Returns
+    -------
+    None
+    """
+    for coord in edge_cells:
+        if growth_rule == 'viscous':
+            apply_viscous_growth_rule(cell_array, coord, neighbour_array, it_time)
+        elif growth_rule == 'default':
+            apply_growth_rule(cell_array, coord, neighbour_array, it_time)
+
+    # Update the state of all cells in the edge subset
+    for coord in edge_cells:
+        cell_array[coord].update_state()
+
+
+
 def evolve_blobs(blobs, cell_array, it_time, mask):
     state_array = cell_array_to_state_array(cell_array)
     neighbour_array = create_neighbours_array(state_array)
 
     for blob in blobs:
-        blob.grow(cell_array, it_time, neighbour_array, mask)
+        grow_blob(blob, cell_array, it_time, neighbour_array)
