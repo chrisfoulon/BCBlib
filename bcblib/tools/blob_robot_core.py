@@ -88,7 +88,7 @@ def create_neighbours_array(state_array, footprint=None, neighbourhood='moore', 
 
     Parameters
     ----------
-    state_array: np.ndarray
+    bin_state_array: np.ndarray
     footprint: np.ndarray (optional)
     neighbourhood: str (optional)
     out_of_bound_values: int (optional)
@@ -99,19 +99,20 @@ def create_neighbours_array(state_array, footprint=None, neighbourhood='moore', 
         An array with the same shape as `state_array`, where each element
         contains the number of neighbors for the corresponding cell in the input array.
     """
+    # Replace -1 (non-spawnable cells) with 0 in state_array to avoid counting them as neighbors in the convolution
+    bin_state_array = np.where(state_array > 0, 1, 0)
+
     if footprint is None:
         if neighbourhood == 'moore':
-            footprint = ndimage.generate_binary_structure(rank=state_array.ndim, connectivity=3)
+            footprint = ndimage.generate_binary_structure(rank=bin_state_array.ndim, connectivity=3)
         elif neighbourhood in ['von_neumann', 'von neumann', 'vn', 'n']:
-            footprint = ndimage.generate_binary_structure(rank=state_array.ndim, connectivity=1)
+            footprint = ndimage.generate_binary_structure(rank=bin_state_array.ndim, connectivity=1)
 
     # Ensure the cell itself is not counted as a neighbor
-    footprint[tuple([1] * state_array.ndim)] = 0
+    footprint[tuple([1] * bin_state_array.ndim)] = 0
 
-    # Using convolve might be faster than generic_filter if the operation is simple
-    neighbours_array = ndimage.convolve(state_array, footprint, mode='constant', cval=out_of_bound_values)
-    # return ndimage.generic_filter(state_array, np.count_nonzero, footprint=footprint, mode='constant',
-    #                               cval=out_of_bound_values)
+    neighbours_array = ndimage.convolve(bin_state_array, footprint, mode='constant', cval=out_of_bound_values)
+
     return neighbours_array
 
 
@@ -211,6 +212,11 @@ def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=N
         A list of Blob instances.
     cell_array : np.ndarray
         The initialized cell array.
+
+    Notes:
+    - The blobs are initialized with the seed values and the edge cells.
+    - If the seed coord of a blob falls into another blob's initial shape, the seed will replace the other blob's cell.
+        This will prevent the new blob from growing. This needs to be handled in the seeds coordinate generation.
     """
     # Initialize the cell array using vectorization
     def create_cell(x, y, z):
@@ -225,7 +231,10 @@ def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=N
     # Create Blob instances and initialize the seeds with optional shapes
     blobs = []
     for seed_coord, seed_value in zip(seed_coords, seed_values):
-        blob = Blob(seed_coord, seed_value, max_size)
+        print(f'Initializing blob {seed_value} at {seed_coord}')
+        blob = Blob(seed_coord, seed_value, cell_array, max_size)
+        print(f'Blob init values: {blob.seed_value} | {blob.max_size} | {blob.new_cells} | '
+              f'{blob.size}')
         blobs.append(blob)
 
         if seed_shape is not None:
@@ -233,14 +242,16 @@ def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=N
             seed_shape_coords = np.argwhere(seed_shape)
             for offset in seed_shape_coords:
                 target_coord = tuple(np.array(seed_coord) + offset - np.array(seed_shape.shape) // 2)
-                if coord_in_array(target_coord, cell_array) and mask[target_coord] == 1:
+                if coord_in_array(target_coord, cell_array) and cell_array[target_coord].get_state() == 0:
                     cell_array[target_coord].set_next_state(seed_value, it_time=0)
-                    cell_array[target_coord].update_state()
-                    blob.edge_cells.add(target_coord)
+                    # print(f'State and next state of {target_coord}: {cell_array[target_coord].get_state()} | {cell_array[target_coord].get_next_state()}')
+                    blob.add_new_cells(target_coord)
         else:
             # If no shape is specified, just place a single cell
             cell_array[seed_coord].set_next_state(seed_value, it_time=0)
-            cell_array[seed_coord].update_state()
+            # the seed is already in the edge_cells from the Blob initialization and will be updated in the next step
+        print(f'Number of new cells for seed {seed_value}: {len(blob.new_cells)}')
+        blob.update_blob(cell_array)
 
     return blobs, cell_array
 

@@ -8,6 +8,7 @@ from tqdm import tqdm
 def coord_in_array(coord, array):
     """
     Check if a coordinate is within the bounds of a numpy array.
+
     Parameters
     ----------
     coord: tuple
@@ -16,15 +17,8 @@ def coord_in_array(coord, array):
     Returns
     -------
     bool
-
     """
-    if len(coord) != len(array.shape):
-        raise ValueError('Coord must have the same dimension as array.shape')
-    in_arr = True
-    for i, c in enumerate(coord):
-        if not 0 <= c < array.shape[i]:
-            in_arr = False
-    return in_arr
+    return all(0 <= c < array.shape[i] for i, c in enumerate(coord))
 
 
 def find_centroid_and_check(array, check_inside=True):

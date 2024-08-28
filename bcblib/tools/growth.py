@@ -115,17 +115,18 @@ def apply_growth_rule(array, cell_coord, neighbour_array, it_time):
 
     # Spread the cell's value to its neighbors if they are spawnable (i.e., state == 0)
     spreadable_cells = []
+    # The cell is included in the neighbour as its state needs to be updated with the it_time
     for offset in np.argwhere(ndimage.generate_binary_structure(rank=3, connectivity=1)):
         neighbour_coord = tuple(np.array(cell_coord) + offset - 1)
-        if neighbour_coord == cell_coord:
-            continue  # Skip if the neighbor coordinate is the same as the current cell coordinate
         if coord_in_array(neighbour_coord, array) and array[neighbour_coord].get_state() == 0:
             spreadable_cells.append(neighbour_coord)
 
     for coord in spreadable_cells:
         array[coord].set_next_state(cell_state, it_time)
 
-    cell.update_state()
+    # This should not be necessary if we call evolve_autonmaton
+    # cell.update_state()
+    # TODO review the logic for a classic CA
 
 
 def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time):
@@ -232,35 +233,6 @@ def evolve_parcellation_opti(cell_array, it_time, growth_rule='default'):
             c.item().update_state()
 
 
-
-def grow_blob(blob, cell_array, it_time, neighbour_array):
-    """
-    Perform one growth iteration for the blob using the evolve_parcellation_opti_subset function.
-
-    Parameters
-    ----------
-    blob : Blob
-        The Blob instance that needs to grow.
-    cell_array : np.ndarray
-        The array representing the cellular automaton grid.
-    it_time : int
-        The current iteration time.
-    neighbour_array : np.ndarray
-        The array representing the number of neighbors for each cell.
-    """
-    if not blob.can_grow():
-        return
-
-    evolve_parcellation_opti_subset(cell_array,
-                                    list(blob.edge_cells),
-                                    neighbour_array,
-                                    it_time,
-                                    growth_rule='default')
-
-    blob.update_edge(cell_array, neighbour_array)
-    blob.size = len(blob.edge_cells)
-
-
 def evolve_parcellation_opti_subset(cell_array, edge_cells, neighbour_array, it_time, growth_rule='default'):
     """
     Optimized function to evolve the cellular automaton for parcellation on a subset of cells.
@@ -293,10 +265,27 @@ def evolve_parcellation_opti_subset(cell_array, edge_cells, neighbour_array, it_
         cell_array[coord].update_state()
 
 
-
-def evolve_blobs(blobs, cell_array, it_time, mask):
+def evolve_blobs(blobs, cell_array, it_time):
+    # Convert cell array to state array
     state_array = cell_array_to_state_array(cell_array)
-    neighbour_array = create_neighbours_array(state_array)
+    bin_state_array = state_array > 0
+    print(f'Previous step size from state array: {np.count_nonzero(bin_state_array)}')
+    # Create the neighbour array
+    neighbour_array = create_neighbours_array(state_array, neighbourhood='von_neumann')
+    print(f'First cell_array cell type: {type(cell_array[0])}')
 
+    # Check if any blob can still grow
+    blobs_can_still_grow = any(blob.can_grow() for blob in blobs)
+    if not blobs_can_still_grow:
+        return
+
+    # Track all live cells as seen by blobs
+    tracked_live_cells_set = set()
+
+    # Process each blob
     for blob in blobs:
-        grow_blob(blob, cell_array, it_time, neighbour_array)
+        if not blob.growth_complete:
+            blob.grow(cell_array, neighbour_array, it_time)
+        # Track live cells for each blob
+        tracked_live_cells_set.update(blob.new_cells)
+        print(f'Blob size: {blob.size}')

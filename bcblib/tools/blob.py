@@ -1,8 +1,11 @@
 import numpy as np
 from scipy import ndimage
+import random
+
+from bcblib.tools.arrays_utils import coord_in_array
 
 
-def get_neighbors(coord, shape):
+def get_neighbours(coord, shape):
     """
     Get valid neighbors of a given coordinate.
 
@@ -30,13 +33,32 @@ def get_neighbors(coord, shape):
 
 
 class Blob:
-    def __init__(self, seed_coord, seed_value, max_size=None):
+    def __init__(self, seed_coord, seed_value, cell_array, max_size=None):
+        """
+        Initialize a blob with a seed cell. The seed cell needs to be updated before the blob can grow. This is
+        usually done by the initializing function.
+
+        Parameters
+        ----------
+        seed_coord : tuple
+            The initial coordinate of the seed.
+        seed_value : int
+            The value associated with the seed and the blob.
+        seed_cell : Cell
+            The cell object corresponding to the seed.
+        max_size : int, optional
+            The maximum size the blob can grow to.
+        """
         self.seed_value = seed_value
         self.max_size = max_size
-        # TODO we need to update the size somewhere
-        self.size = 1
-        self.edge_cells = {seed_coord}  # Start with the seed as the edge
+        self.size = 0  # Start size at 0; it will be updated when adding cells.
+        self.edge_cells = {seed_coord}  # Initialize an empty edge cells set
+        self.new_cells = set()  # Initialize an empty new cells set
         self.growth_complete = False
+
+        # Use the blob's own methods to manage the initial state
+        self.add_new_cells(seed_coord)  # Adds the seed as a new cell and updates the size
+        self.update_blob(cell_array)  # Initial edge is set based on the seed cell
 
     def can_grow(self):
         """
@@ -49,7 +71,8 @@ class Blob:
         bool
             True if the blob can grow, False otherwise.
         """
-        if self.max_size is not None and self.size >= self.max_size:
+        # TODO just ">" give me the right size at the end but I don't know why ...
+        if self.max_size is not None and self.size > self.max_size:
             self.growth_complete = True
             return False
         if not self.edge_cells:  # Check if the edge set is empty
@@ -57,10 +80,23 @@ class Blob:
             return False
         return True
 
-    def update_edge(self, cell_array, neighbour_array):
+    def add_new_cells(self, new_cells):
+        """
+        Add new cells to the blob.
+
+        Parameters
+        ----------
+        new_cells : set
+            A set of new cells to add to the blob.
+        """
+        if not isinstance(new_cells, set):
+            new_cells = {new_cells}
+        self.new_cells.update(new_cells)
+
+    def update_edge(self, cell_array):
         """
         Update the edge cells of the blob using the neighbour array.
-
+        Not made to be called directly, but rather handled internally.
         Parameters
         ----------
         cell_array : np.ndarray
@@ -68,15 +104,97 @@ class Blob:
         neighbour_array : np.ndarray
             The array representing the number of neighbors for each cell.
         """
-        new_edge_cells = set()
-        # TODO we're still checking all the cells, we could optimize this
-        # and we are not removing the edge cells that are not edge cells anymore
-        for coord in self.edge_cells:
-            if neighbour_array[coord] < 6:  # Blob-specific edge condition
-                neighbors = get_neighbors(coord, cell_array.shape)
-                for neighbor in neighbors:
-                    if cell_array[neighbor].get_state() == 0:  # Check if unoccupied
-                        new_edge_cells.add(neighbor)
+        for coords in self.new_cells.copy():
+            neighbours = get_neighbours(coords, cell_array.shape)
+            for neighbour in neighbours:
+                if cell_array[neighbour].get_state() == 0:
+                    self.edge_cells.add(coords)
+                    break
+        # flush the new cells
+        self.new_cells.clear()
 
-        self.edge_cells = new_edge_cells
+    def apply_cell_growth(self, cell_coord, cell_array, neighbour_array, it_time, viscosity_factor=1):
+        if not self.can_grow():
+            return
+
+        cell = cell_array[cell_coord]
+        cell_state = cell.get_state()
+
+        if cell_state <= 0 or cell_state != self.seed_value:
+            return  # Skip non-spawnable cells, empty cells, and cells with different values because a blob can only grow with its seed value
+
+        neighbour_offsets = np.argwhere(ndimage.generate_binary_structure(rank=3, connectivity=1))
+        np.random.shuffle(neighbour_offsets)
+
+        # List to store candidates for growth
+        candidate_neighbours = []
+        weights = []
+
+        for offset in neighbour_offsets:
+            neighbour_coord = tuple(np.array(cell_coord) + offset - 1)
+            if coord_in_array(neighbour_coord, cell_array) and cell_array[neighbour_coord].get_state() == 0:
+                # Calculate the weight inversely proportional to the number of neighbors (i.e., less crowded = higher weight)
+                # print(f'Neighbour {neighbour_coord} has {neighbour_array[neighbour_coord]} neighbours')
+                weight = (1 / (1 + neighbour_array[neighbour_coord])) * viscosity_factor
+                candidate_neighbours.append(neighbour_coord)
+                weights.append(weight)
+
+        if candidate_neighbours:
+            # Check if sum(weights) is zero or if any weight is non-finite
+            weight_sum = sum(weights)
+            if weight_sum == 0 or not np.all(np.isfinite(weights)):
+                print(f"Invalid weights: {weights}")
+                print(f"Sum of weights: {weight_sum}")
+                return  # Skip this iteration to avoid errors
+
+            # Normalize weights to sum to 1
+            normalized_weights = [w / weight_sum for w in weights]
+
+            # Use Python's built-in random.choices to select a neighbor based on the weights
+            chosen_neighbour = random.choices(candidate_neighbours, weights=normalized_weights, k=1)[0]
+
+            # Update the state of the chosen neighbor
+            cell_array[chosen_neighbour].set_next_state(self.seed_value, it_time)
+            self.add_new_cells(chosen_neighbour)
+
+            # If the cell still has spawnable neighbors, keep it as an edge cell
+            if neighbour_array[cell_coord] < 6:
+                self.edge_cells.add(cell_coord)
+            else:
+                self.edge_cells.discard(cell_coord)
+        else:
+            # If no neighbors are available, remove this cell from edge cells
+            self.edge_cells.discard(cell_coord)
+
+    def grow(self, cell_array, neighbour_array, it_time):
+        """
+        Grow the blob by applying the growth rule to the edge cells.
+
+        Parameters
+        ----------
+        cell_array : np.ndarray
+            The array representing the cellular automaton grid.
+        neighbour_array : np.ndarray
+            The array representing the number of neighbors for each cell.
+        it_time : int
+            The current iteration time.
+        """
+        for cell_coord in self.edge_cells.copy():
+            self.apply_cell_growth(cell_coord, cell_array, neighbour_array, it_time)
+        self.update_blob(cell_array)
+
+    def update_blob(self, cell_array):
+        if not self.new_cells:
+            print("No new cells to update.")
+            return
+
+        for coord in self.new_cells:
+            # Assuming `coord` is always valid if it reaches this point
+            # we need to check that the blob can still grow
+            if not self.can_grow():
+                break
+            cell_array[coord].update_state()
+            self.size += 1
+        print(f"Blob size: {self.size} (internal calculation, can grow? {self.can_grow()})")
+        self.update_edge(cell_array)
 
