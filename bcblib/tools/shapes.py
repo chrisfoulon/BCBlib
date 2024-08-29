@@ -2,28 +2,30 @@ import numpy as np
 from scipy import ndimage
 
 
-def create_spherical_shape(radius):
+def create_hypersphere_shape(radius, n_dim=3):
     """
-    Create a 3D binary array with a spherical shape.
+    Create an ND binary array with a hyperspherical shape.
 
     Parameters
     ----------
     radius : int
-        The radius of the sphere.
+        The radius of the hypersphere.
+    n_dim : int
+        The number of dimensions. Default is 3.
 
     Returns
     -------
     np.ndarray
-        A 3D binary array with a spherical shape.
+        An ND binary array with a hyperspherical shape.
     """
-    # Define the grid
-    diameter = 2 * radius + 1
-    grid = np.ogrid[-radius:radius + 1, -radius:radius + 1, -radius:radius + 1]
+    # Define the grid for each dimension
+    grid = np.ogrid[[slice(-radius, radius + 1)] * n_dim]
 
-    # Create a binary sphere
-    sphere = grid[0] ** 2 + grid[1] ** 2 + grid[2] ** 2 <= radius ** 2
+    # Create a binary hypersphere
+    distance_squared = sum((g ** 2 for g in grid))
+    hypersphere = distance_squared <= radius ** 2
 
-    return sphere.astype(int)
+    return hypersphere.astype(int)
 
 
 def create_shapes_in_arr(cell_array, coords=1, structure=None, connectivity=None, dimensions=3, value=1, it_time=0):

@@ -2,7 +2,8 @@ import numpy as np
 from scipy import ndimage
 
 from bcblib.tools.arrays_utils import coord_in_array
-from bcblib.tools.blob_robot_core import check_rule, create_neighbours_array, cell_array_to_state_array
+from bcblib.tools.blob_robot_core import (check_rule, create_neighbours_array,
+                                          create_spawnable_neighbours_array, cell_array_to_state_array)
 
 
 # TODO there could be a bunch of other strategies for the spawn and states
@@ -86,7 +87,7 @@ def evolve_automaton(cell_array, it_time, rule=(4, 2, 1, 'M'), fading='hp'):
         for c in it:
             c.item().update_state()
 
-def apply_growth_rule(array, cell_coord, neighbour_array, it_time):
+def apply_growth_rule(array, cell_coord, neighbour_array, it_time, n_dim=3):
     """
     Apply the growth rule to a cell, ensuring that it spreads its value only to spawnable cells.
 
@@ -100,6 +101,8 @@ def apply_growth_rule(array, cell_coord, neighbour_array, it_time):
         An array of the same shape as `array`, containing the number of neighbors for each cell.
     it_time : int
         The current iteration time.
+    n_dim : int, optional
+        The number of dimensions of the array.
 
     Returns
     -------
@@ -116,7 +119,7 @@ def apply_growth_rule(array, cell_coord, neighbour_array, it_time):
     # Spread the cell's value to its neighbors if they are spawnable (i.e., state == 0)
     spreadable_cells = []
     # The cell is included in the neighbour as its state needs to be updated with the it_time
-    for offset in np.argwhere(ndimage.generate_binary_structure(rank=3, connectivity=1)):
+    for offset in np.argwhere(ndimage.generate_binary_structure(rank=n_dim, connectivity=1)):
         neighbour_coord = tuple(np.array(cell_coord) + offset - 1)
         if coord_in_array(neighbour_coord, array) and array[neighbour_coord].get_state() == 0:
             spreadable_cells.append(neighbour_coord)
@@ -129,7 +132,7 @@ def apply_growth_rule(array, cell_coord, neighbour_array, it_time):
     # TODO review the logic for a classic CA
 
 
-def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time):
+def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time, n_dim=3):
     """
     Apply a viscous growth rule to simulate a liquid-like spreading.
 
@@ -143,6 +146,8 @@ def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time):
         An array of the same shape as `array`, containing the number of neighbors for each cell.
     it_time : int
         The current iteration time.
+    n_dim : int, optional
+        The number of dimensions of the array.
 
     Returns
     -------
@@ -157,7 +162,7 @@ def apply_viscous_growth_rule(array, cell_coord, neighbour_array, it_time):
     # Viscosity factor: decrease the chance of spreading in dense areas
     viscosity = 1 / (1 + neighbour_array[cell_coord])
 
-    neighbour_offsets = np.argwhere(ndimage.generate_binary_structure(rank=3, connectivity=1))
+    neighbour_offsets = np.argwhere(ndimage.generate_binary_structure(rank=n_dim, connectivity=1))
     np.random.shuffle(neighbour_offsets)
 
     for offset in neighbour_offsets:
@@ -269,10 +274,8 @@ def evolve_blobs(blobs, cell_array, it_time):
     # Convert cell array to state array
     state_array = cell_array_to_state_array(cell_array)
     bin_state_array = state_array > 0
-    print(f'Previous step size from state array: {np.count_nonzero(bin_state_array)}')
     # Create the neighbour array
-    neighbour_array = create_neighbours_array(state_array, neighbourhood='von_neumann')
-    print(f'First cell_array cell type: {type(cell_array[0])}')
+    spawnable_neighbours_array = create_spawnable_neighbours_array(state_array, neighbourhood='von_neumann')
 
     # Check if any blob can still grow
     blobs_can_still_grow = any(blob.can_grow() for blob in blobs)
@@ -285,7 +288,6 @@ def evolve_blobs(blobs, cell_array, it_time):
     # Process each blob
     for blob in blobs:
         if not blob.growth_complete:
-            blob.grow(cell_array, neighbour_array, it_time)
+            blob.grow(cell_array, spawnable_neighbours_array, it_time)
         # Track live cells for each blob
         tracked_live_cells_set.update(blob.new_cells)
-        print(f'Blob size: {blob.size}')
