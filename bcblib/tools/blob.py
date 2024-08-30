@@ -122,7 +122,8 @@ class Blob:
         cell_state = cell.get_state()
 
         if cell_state <= 0 or cell_state != self.seed_value:
-            return  # Skip non-spawnable cells, empty cells, and cells with different values because a blob can only grow with its seed value
+            return  # Skip non-spawnable cells, empty cells, and cells with different values because a blob can
+            # only grow with its seed value
 
         neighbour_offsets = np.argwhere(ndimage.generate_binary_structure(rank=self.n_dim, connectivity=1))
         np.random.shuffle(neighbour_offsets)
@@ -134,7 +135,8 @@ class Blob:
         for offset in neighbour_offsets:
             neighbour_coord = tuple(np.array(cell_coord) + offset - 1)
             if coord_in_array(neighbour_coord, cell_array) and cell_array[neighbour_coord].get_state() == 0:
-                # Calculate the weight inversely proportional to the number of spawnable neighbors (i.e., less crowded = higher weight)
+                # Calculate the weight inversely proportional to the number of spawnable neighbors
+                # (i.e., less crowded = higher weight)
                 weight = (1 / (1 + spawnable_neighbour_array[neighbour_coord])) * viscosity_factor
                 candidate_neighbours.append(neighbour_coord)
                 weights.append(weight)

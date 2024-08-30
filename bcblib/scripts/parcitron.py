@@ -129,7 +129,6 @@ def determine_parcels(total_points, num_parcels=None, parcel_size=None, strategy
     return parcel_sizes
 
 
-
 def create_coverage_mask(image_path_list):
     """
     Create a combined coverage mask from a list of NIfTI image paths.

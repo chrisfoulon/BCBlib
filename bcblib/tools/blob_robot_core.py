@@ -1,13 +1,17 @@
+import random
 from pathlib import Path
 from functools import partial
 
 import numpy as np
 from scipy import ndimage
+from scipy.ndimage import label, generate_binary_structure
 from scipy.spatial.distance import cdist
 
 from bcblib.tools.arrays_utils import coord_in_array
 from bcblib.tools.blob import Blob
 from bcblib.tools.cell import Cell
+from bcblib.tools.general_utils import partition_values_to_sizes_with_margin
+from bcblib.tools.misc import calculate_hypersphere_radius
 
 """
 https://softologyblog.wordpress.com/2019/12/28/3d-cellular-automata-3/
@@ -229,103 +233,220 @@ def create_cell_array(shape, init_state=0):
 # TODO Have a sliced growth (neighbourhood only on the slice) starting from a couple of random cells on each slice
 
 
-def assign_blobs_to_components(labeled_mask, blob_sizes, margin=0.1):
+def select_seed_coords_in_component(component_mask, max_size, num_seeds, n_dim):
     """
-    Assign blobs to connected components based on their sizes.
+    Select seed coordinates within a connected component such that each seed is
+    distant from another seed by about the radius of a hypersphere of the size
+    of the blob's max_size.
 
     Parameters
     ----------
-    labeled_mask : np.ndarray
-        A labeled array where each unique label corresponds to a connected component.
-    blob_sizes : list of ints
-        The maximum sizes of the blobs to be assigned.
-    margin : float
-        The allowed margin for the sum of blob sizes compared to component size.
+    component_mask : np.ndarray
+        A binary mask of the connected component where seeds are to be placed.
+    max_size : int
+        The maximum size of the blob.
+    num_seeds : int
+        The number of seed coordinates to select.
+    n_dim : int
+        The number of dimensions (N) of the space.
 
     Returns
     -------
-    dict
-        A dictionary where keys are component labels and values are lists of blob indices assigned to each component.
+    seed_coords : list of tuples
+        A list of coordinates for the seeds within the connected component.
     """
-    # Calculate the size of each component
-    component_sizes = [(label, np.sum(labeled_mask == label)) for label in np.unique(labeled_mask) if label != 0]
+    # Calculate the radius of a hypersphere corresponding to the blob's max size
+    radius = calculate_hypersphere_radius(max_size, n_dim)
 
-    # Sort components by size (largest to smallest)
-    component_sizes.sort(key=lambda x: x[1], reverse=True)
+    # Find all the coordinates within the connected component
+    component_coords = np.argwhere(component_mask)
 
-    # Sort blobs by size (largest to smallest)
-    blob_sizes = sorted(enumerate(blob_sizes), key=lambda x: x[1], reverse=True)
+    seed_coords = []
 
-    assignments = {label: [] for label, _ in component_sizes}
+    while len(seed_coords) < num_seeds and len(component_coords) > 0:
+        # Randomly select a potential seed coordinate
+        seed = random.choice(component_coords)
 
-    for component_label, component_size in component_sizes:
-        available_size = component_size
-        for blob_index, blob_size in blob_sizes[:]:  # Iterate over a copy of the list
-            if (available_size * (1 - margin)) <= blob_size <= (available_size * (1 + margin)):
-                assignments[component_label].append(blob_index)
-                available_size -= blob_size
-                blob_sizes.remove((blob_index, blob_size))  # Remove assigned blob
-            elif blob_size < available_size * (1 - margin):
-                assignments[component_label].append(blob_index)
-                available_size -= blob_size
-                blob_sizes.remove((blob_index, blob_size))  # Remove assigned blob
-            if available_size <= 0:
-                break
+        if len(seed_coords) == 0:
+            seed_coords.append(tuple(seed))
+        else:
+            # Check if the selected seed is distant enough from all other seeds
+            distances = cdist([seed], seed_coords)
+            if np.all(distances >= radius):
+                seed_coords.append(tuple(seed))
 
-    return assignments
+        # Remove the selected coordinate from the pool to avoid reselection
+        component_coords = np.array([coord for coord in component_coords if not np.array_equal(coord, seed)])
+
+    return seed_coords
 
 
-def determine_seed_positions(labeled_mask, assignments, shape, seed_shape=None):
+def initialize_random_blobs_with_mask(shape, mask, max_size=None, seed_shape=None, margin=0.1,
+                                      neighbourhood='moore', min_volume_threshold=4, verbose=False):
     """
-    Determine seed positions for blobs within each connected component.
+    Initialize blobs in a cell array based on a binary mask and seed values, with random seed selection within
+    connected components. The function partitions the connected components of the mask, assigns seeds, and
+    initializes blobs accordingly.
 
     Parameters
     ----------
-    labeled_mask : np.ndarray
-        A labeled array where each unique label corresponds to a connected component.
-    assignments : dict
-        A dictionary where keys are component labels and values are lists of blob indices assigned to each component.
     shape : tuple
-        The overall shape of the cell array.
+        The shape of the cell array (e.g., (x, y, z) for a 3D array).
+    mask : np.ndarray
+        A binary mask indicating spawnable areas (1) and non-spawnable areas (0).
+    max_size : int or list of ints, optional
+        The maximum size of each blob. If an int is provided, all blobs will have the same max size.
+        If a list of ints is provided, each blob will have a corresponding max size.
+        If None, blobs can grow indefinitely.
     seed_shape : np.ndarray, optional
         A binary array defining the shape of each seed. The shape must fit within the cell array.
+        The volume of the seed shape should not exceed the max_size of the blob.
+    margin : float, optional
+        The margin allowed when partitioning connected components relative to the max_size.
+        For example, a margin of 0.1 allows a blob's size to be within 10% above or below the max_size.
+    neighbourhood : str or np.ndarray, optional
+        Defines the neighborhood structure used for connected components labeling.
+        Options are:
+        - "moore" (default): Uses a Moore neighborhood (all adjacent cells).
+        - "von neumann": Uses a Von Neumann neighborhood (only face-adjacent cells).
+        - Custom: A binary structure defining the neighborhood.
+    min_volume_threshold : int, optional
+        The minimum volume threshold for connected components. Components smaller than this volume will be ignored.
+    verbose : bool, optional
+        If True, prints detailed information about the partitioning process, seed selection, and blob initialization.
 
     Returns
     -------
-    list of tuples
-        Each tuple contains the seed coordinates, blob index, and max_size.
+    blobs : list
+        A list of Blob instances initialized with the seed values and corresponding sizes.
+    cell_array : np.ndarray
+        The initialized cell array with blobs placed according to the mask and partitioning.
+
+    Notes
+    -----
+    - The function first extracts connected components from the mask.
+    - Connected components smaller than the `min_volume_threshold` are ignored.
+    - The remaining connected components are then partitioned based on the max_size and margin, ensuring each blob's size
+      approximately matches one of the partitioned sizes.
+    - Seed coordinates within each connected component are selected randomly, ensuring that they are sufficiently
+      distant from each other based on the calculated radius of a hypersphere with the given max_size.
+    - The blobs are initialized and updated incrementally within the partitioning loop.
+    - If no valid partition can be found within the specified margin and max_size constraints, an error is raised.
+    - If `seed_shape` is provided, its volume must not exceed the `max_size` of the blob.
     """
-    seed_positions = []
 
-    for component_label, blob_indices in assignments.items():
-        # Get all positions in the component
-        component_coords = np.argwhere(labeled_mask == component_label)
+    # Step 1: Determine the neighborhood structure for labeling
+    if isinstance(neighbourhood, str):
+        if neighbourhood.lower() == 'moore':
+            structure = generate_binary_structure(rank=len(shape), connectivity=len(shape))
+        elif neighbourhood.lower() == 'von neumann':
+            structure = generate_binary_structure(rank=len(shape), connectivity=1)
+        else:
+            raise ValueError("Invalid neighborhood option. Choose 'moore', 'von neumann', or "
+                             "provide a custom binary structure.")
+    elif isinstance(neighbourhood, np.ndarray):
+        structure = neighbourhood
+    else:
+        raise ValueError("neighbourhood must be either a string ('moore' or 'von neumann') "
+                         "or a binary structure array.")
 
-        # Calculate the minimum distance for each blob based on its max_size
-        min_distances = []
-        for blob_index in blob_indices:
-            max_size = shape[blob_index]  # Assuming blob_sizes correspond to some dimension in `shape`
-            radius = (max_size / np.pi) ** (1 / 2)  # Adjust for higher dims if needed
-            min_distances.append(radius)
+    # Step 2: Extract connected components from the mask
+    labeled_mask, num_features = label(mask, structure=structure)
+    component_sizes = np.bincount(labeled_mask.ravel())[1:]  # Exclude background
 
-        # Place blobs within the component
-        for blob_index, min_distance in zip(blob_indices, min_distances):
-            valid_positions = component_coords
+    if verbose:
+        print(f"Number of connected components found: {num_features}")
+        print(f"Sizes of connected components before filtering: {component_sizes}")
 
-            # Filter out positions that are too close to already placed seeds
-            if seed_positions:
-                existing_coords = np.array([pos[0] for pos in seed_positions if pos[1] in blob_indices])
-                dists = cdist(valid_positions, existing_coords)
-                valid_positions = valid_positions[np.all(dists >= min_distance, axis=1)]
+    # Step 3: Filter out components smaller than the min_volume_threshold
+    valid_components = component_sizes >= min_volume_threshold
+    component_sizes = component_sizes[valid_components]
 
-            # Randomly select a valid seed position
-            if len(valid_positions) == 0:
-                raise ValueError("No valid positions found. Consider adjusting the minimum distance or component size.")
+    if verbose:
+        print(f"Sizes of connected components after filtering: {component_sizes}")
 
-            seed_position = valid_positions[np.random.choice(len(valid_positions))]
-            seed_positions.append((tuple(seed_position), blob_index, shape[blob_index]))
+    if len(component_sizes) == 0:
+        raise ValueError("No connected components meet the minimum volume threshold.")
 
-    return seed_positions
+    # Step 4: Generate the partition using the connected components
+    if isinstance(max_size, int):
+        total_cells = mask.sum()
+        base_size = max_size
+        num_full_blobs = total_cells // base_size
+        remainder = total_cells % base_size
+        max_sizes = [base_size] * num_full_blobs + ([remainder] if remainder > 0 else [])
+    elif isinstance(max_size, list):
+        max_sizes = max_size
+    else:
+        raise ValueError("max_size must be an integer or a list of integers.")
+
+    seed_values = list(range(1, len(max_sizes) + 1))
+
+    partitions = partition_values_to_sizes_with_margin(max_sizes, component_sizes.tolist(), margin)
+
+    print(f"Partitions: {partitions}")
+
+    if partitions is None:
+        raise ValueError("No valid partition found with the given margin and max sizes. You may need to adjust the "
+                         f"margin or the max_size parameter. Current max sizes: {max_sizes}")
+
+    if verbose:
+        print("Partitioning result:")
+        for i, partition in enumerate(partitions):
+            print(f"Partition {i} sizes: {[max_sizes[p] for p in partition]}")
+            print(f'Indices: {partition}')
+
+    # Step 5: Initialize the cell array using vectorization
+    def create_cell(x, y, z):
+        if mask[x, y, z] == 1:
+            return Cell(0)
+        else:
+            return Cell(-1)
+
+    vectorized_create_cell = np.vectorize(create_cell, otypes=[object])
+    cell_array = vectorized_create_cell(*np.indices(shape))
+
+    blobs = []
+    used_seeds = set()
+
+    # Step 6: Iterate over the partitioned connected components and select seeds
+    for i, partition in enumerate(partitions[0]):  # Use the first valid partition
+        component_mask = (labeled_mask == (np.where(valid_components)[0][partition] + 1))
+        seed_coord = select_seed_coords_in_component(component_mask, max_sizes[partition],
+                                                     1, n_dim=len(shape))[0]
+        seed_value = seed_values[partition]
+        blob_max_size = max_sizes[partition]
+
+        if partition in used_seeds:
+            continue
+
+        used_seeds.add(partition)
+        if verbose:
+            print(f'Initializing blob {seed_value} at {seed_coord} with max size {blob_max_size}')
+
+        if seed_shape is not None:
+            seed_volume = np.sum(seed_shape)
+            if seed_volume > blob_max_size:
+                raise ValueError(f"The seed shape volume ({seed_volume}) exceeds the max_size "
+                                 f"({blob_max_size}) for the blob.")
+
+        blob = Blob(seed_coord, seed_value, cell_array, blob_max_size)
+        blobs.append(blob)
+
+        if seed_shape is not None:
+            seed_shape_coords = np.argwhere(seed_shape)
+            for offset in seed_shape_coords:
+                target_coord = tuple(np.array(seed_coord) + offset - np.array(seed_shape.shape) // 2)
+                if coord_in_array(target_coord, cell_array) and cell_array[target_coord].get_state() == 0:
+                    cell_array[target_coord].set_next_state(seed_value, it_time=0)
+                    blob.add_new_cells(target_coord)
+        else:
+            cell_array[seed_coord].set_next_state(seed_value, it_time=0)
+
+        # Update the blob immediately after initialization and seeding
+        blob.update_blob(cell_array)
+
+    return blobs, cell_array
 
 
 def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=None, seed_shape=None):
@@ -401,5 +522,3 @@ def initialize_blobs_with_mask(shape, mask, seed_coords, seed_values, max_size=N
         blob.update_blob(cell_array)
 
     return blobs, cell_array
-
-

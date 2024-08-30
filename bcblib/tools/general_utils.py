@@ -1,5 +1,6 @@
 import csv
 import json
+import random
 from argparse import ArgumentTypeError
 from pathlib import Path
 
@@ -221,3 +222,57 @@ def split_dict(d, chunk_size, output_dir=None, output_pref=None):
                   last_chunk)
     chunk_list.append(last_chunk)
     return chunk_list
+
+
+def partition_values_to_sizes_with_margin(values, sizes, margin):
+    def backtrack(index, current_partition, used):
+        if index == len(values):
+            # Check if all partitions are valid according to the margin
+            for i in range(len(sizes)):
+                current_sum = sum(values[j] for j in current_partition[i])
+                if not (lower_bounds[i] <= current_sum <= upper_bounds[i]):
+                    return False
+            return all(used)  # Ensure all values are used
+
+        # Shuffle the indices to introduce randomness
+        size_indices = list(range(len(sizes)))
+        random.shuffle(size_indices)
+
+        for i in size_indices:
+            current_sum = sum(values[j] for j in current_partition[i])
+            if current_sum + values[index] <= upper_bounds[i]:
+                # Add the index of the value to the current bin
+                current_partition[i].append(index)
+                used[index] = True
+
+                # Recur to assign the next value
+                if backtrack(index + 1, current_partition, used):
+                    return True
+
+                # If it doesn't work, backtrack
+                current_partition[i].pop()
+                used[index] = False
+
+        return False  # No valid partition was found
+
+    # Calculate the lower and upper bounds for each size based on the margin
+    lower_bounds = [size * (1 - margin) for size in sizes]
+    print(f'Lower bounds: {lower_bounds}')
+    upper_bounds = [size * (1 + margin) for size in sizes]
+    print(f'Upper bounds: {upper_bounds}')
+
+    # Sort indices of values in descending order based on value
+    value_indices = sorted(range(len(values)), key=lambda i: values[i], reverse=True)
+
+    # Initialize partitions (one list for each size)
+    current_partition = [[] for _ in sizes]
+
+    # Track which values have been used
+    used = [False] * len(values)
+
+    # Start the backtracking process
+    if backtrack(0, current_partition, used):
+        # Return the partition as a list of indices
+        return current_partition
+    else:
+        return None  # No valid partition found

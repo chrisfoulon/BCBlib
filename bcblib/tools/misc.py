@@ -1,5 +1,8 @@
+import math
 from collections import defaultdict
 import random
+
+from scipy.special import gamma
 from tqdm import tqdm
 
 import numpy as np
@@ -114,4 +117,22 @@ def permutation_balanced_splits(info_dict_keys, info_dict, num_permutations):
     print(f' BEST SPLITS ===> Means: {best_mean_range}, Stds: {best_std_range}, Stat: {best_st}, P-Value:{best_pvalue}')
     return best_splits
 
+
+def calculate_hypersphere_radius(max_size, n_dim):
+    """
+    Calculate the radius of a hypersphere in N-dimensional space given the volume (max_size).
+
+    Parameters
+    ----------
+    max_size : float
+        The volume of the hypersphere.
+    n_dim : int
+        The number of dimensions (N).
+
+    Returns
+    -------
+    radius : float
+        The radius of the hypersphere in N-dimensional space.
+    """
+    return (max_size * gamma(n_dim / 2 + 1) / math.pi**(n_dim / 2))**(1 / n_dim)
 
