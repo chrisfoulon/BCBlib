@@ -410,41 +410,47 @@ def initialize_random_blobs_with_mask(shape, mask, max_size=None, seed_shape=Non
     used_seeds = set()
 
     # Step 6: Iterate over the partitioned connected components and select seeds
-    for i, partition in enumerate(partitions[0]):  # Use the first valid partition
-        component_mask = (labeled_mask == (np.where(valid_components)[0][partition] + 1))
-        seed_coord = select_seed_coords_in_component(component_mask, max_sizes[partition],
-                                                     1, n_dim=len(shape))[0]
-        seed_value = seed_values[partition]
-        blob_max_size = max_sizes[partition]
+    for i, partition in enumerate(partitions):  # Iterate over each partition
+        component_index = np.where(valid_components)[0][i]  # Get the corresponding component index
+        component_mask = (labeled_mask == (component_index + 1))
 
-        if partition in used_seeds:
-            continue
+        for blob_index in partition:
+            seed_coord = select_seed_coords_in_component(component_mask, max_sizes[blob_index],
+                                                         1, n_dim=len(shape))[0]
+            seed_value = seed_values[blob_index]
+            blob_max_size = max_sizes[blob_index]
 
-        used_seeds.add(partition)
-        if verbose:
-            print(f'Initializing blob {seed_value} at {seed_coord} with max size {blob_max_size}')
+            # Check if this blob has already been initialized
+            if blob_index in used_seeds:
+                continue
 
-        if seed_shape is not None:
-            seed_volume = np.sum(seed_shape)
-            if seed_volume > blob_max_size:
-                raise ValueError(f"The seed shape volume ({seed_volume}) exceeds the max_size "
-                                 f"({blob_max_size}) for the blob.")
+            used_seeds.add(blob_index)
 
-        blob = Blob(seed_coord, seed_value, cell_array, blob_max_size)
-        blobs.append(blob)
+            if verbose:
+                print(f'Initializing blob {seed_value} at {seed_coord} with max size {blob_max_size}')
 
-        if seed_shape is not None:
-            seed_shape_coords = np.argwhere(seed_shape)
-            for offset in seed_shape_coords:
-                target_coord = tuple(np.array(seed_coord) + offset - np.array(seed_shape.shape) // 2)
-                if coord_in_array(target_coord, cell_array) and cell_array[target_coord].get_state() == 0:
-                    cell_array[target_coord].set_next_state(seed_value, it_time=0)
-                    blob.add_new_cells(target_coord)
-        else:
-            cell_array[seed_coord].set_next_state(seed_value, it_time=0)
+            if seed_shape is not None:
+                seed_volume = np.sum(seed_shape)
+                if seed_volume > blob_max_size:
+                    raise ValueError(f"The seed shape volume ({seed_volume}) exceeds the max_size "
+                                     f"({blob_max_size}) for the blob.")
 
-        # Update the blob immediately after initialization and seeding
-        blob.update_blob(cell_array)
+            # Initialize the blob
+            blob = Blob(seed_coord, seed_value, cell_array, blob_max_size)
+            blobs.append(blob)
+
+            if seed_shape is not None:
+                seed_shape_coords = np.argwhere(seed_shape)
+                for offset in seed_shape_coords:
+                    target_coord = tuple(np.array(seed_coord) + offset - np.array(seed_shape.shape) // 2)
+                    if coord_in_array(target_coord, cell_array) and cell_array[target_coord].get_state() == 0:
+                        cell_array[target_coord].set_next_state(seed_value, it_time=0)
+                        blob.add_new_cells(target_coord)
+            else:
+                cell_array[seed_coord].set_next_state(seed_value, it_time=0)
+
+            # Update the blob immediately after initialization and seeding
+            blob.update_blob(cell_array)
 
     return blobs, cell_array
 
