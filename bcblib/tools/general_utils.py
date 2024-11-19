@@ -24,6 +24,17 @@ def str_to_lower(value):
     return value.lower()
 
 
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        # Custom handling for NumPy data types
+        if isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        # Delegate all other types to the default method
+        return super(NumpyEncoder, self).default(obj)
+
+
 def open_json(path):
     with open(path, 'r') as j:
         return json.load(j)
@@ -31,7 +42,7 @@ def open_json(path):
 
 def save_json(path, d):
     with open(path, 'w+') as j:
-        return json.dump(d, j, indent=4)
+        return json.dump(d, j, indent=4, cls=NumpyEncoder)
 
 
 def save_list(path, li):
