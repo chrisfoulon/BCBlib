@@ -487,7 +487,7 @@ def mask_statistical_image(stat_img: nib.Nifti1Image, mask_img: nib.Nifti1Image,
 def plot_statistical_map(stat_img_path: str, template_path: str, output_folder: str,
                          otf_font_path: str = None, title: str = '', cmap: str = 'viridis',
                          prefix: str = '', low_threshold: float = None,
-                         mask_brain: str | nib.Nifti1Image = None, grid_size: str = '3x5') -> None:
+                         mask_brain: Union[str, nib.Nifti1Image] = None, grid_size: str = '3x5') -> None:
     """
     Plot a statistical map overlaying a template image and save the resulting figure.
 
