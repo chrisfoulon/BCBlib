@@ -112,7 +112,7 @@ def select_columns_to_keep(df, min_threshold=90, min_rows=1000):
 
 def normalize_dataframe(df, method='min-max'):
     """
-    Normalize a dataframe with numerical columns.
+    Normalize a dataframe with numerical, datetime, and timedelta columns.
 
     Parameters
     ----------
@@ -127,7 +127,7 @@ def normalize_dataframe(df, method='min-max'):
     Returns
     -------
     pandas.DataFrame
-        A dataframe with normalized numerical columns.
+        A dataframe with normalized columns.
 
     Raises
     ------
@@ -159,20 +159,32 @@ def normalize_dataframe(df, method='min-max'):
 
     df_normalized = df.copy()
 
-    for col in df_normalized.select_dtypes(include=[np.number]).columns:
+    for col in df_normalized.columns:
+        col_dtype = df_normalized[col].dtype
+
+        # Handle numerical columns
+        if np.issubdtype(col_dtype, np.number):
+            values = df_normalized[col]
+        # Handle datetime columns
+        elif np.issubdtype(col_dtype, np.datetime64):
+            values = df_normalized[col].astype('int64') / 1e9  # Convert to seconds
+        # Handle timedelta columns
+        elif np.issubdtype(col_dtype, np.timedelta64):
+            values = df_normalized[col].dt.total_seconds()
+        else:
+            continue  # Skip non-numeric, non-datetime, non-timedelta columns
+
+        # Normalize the values
         if method == 'zscore':
-            # Z-score normalization
-            mean = df_normalized[col].mean()
-            std = df_normalized[col].std()
-            df_normalized[col] = (df_normalized[col] - mean) / std
+            mean = values.mean()
+            std = values.std()
+            df_normalized[col] = (values - mean) / std
         elif method == 'min-max':
-            # Min-max normalization
-            min_val = df_normalized[col].min()
-            max_val = df_normalized[col].max()
-            df_normalized[col] = (df_normalized[col] - min_val) / (max_val - min_val)
+            min_val = values.min()
+            max_val = values.max()
+            df_normalized[col] = (values - min_val) / (max_val - min_val)
         elif method == 'zero-max':
-            # Zero-max normalization
-            max_val = df_normalized[col].max()
-            df_normalized[col] = df_normalized[col] / max_val
+            max_val = values.max()
+            df_normalized[col] = values / max_val
 
     return df_normalized
