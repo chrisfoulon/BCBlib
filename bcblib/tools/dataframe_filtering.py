@@ -110,81 +110,104 @@ def select_columns_to_keep(df, min_threshold=90, min_rows=1000):
     return df[final_columns].dropna()
 
 
-def normalize_dataframe(df, method='min-max'):
+def normalize_dataframe(df, method='min-max', scaling_factors=None):
     """
     Normalize a dataframe with numerical, datetime, and timedelta columns.
-
+    
     Parameters
     ----------
     df : pandas.DataFrame
         The input dataframe to normalize.
     method : str, optional
         The normalization method to use. Options are:
-        - 'zscore': Apply z-score normalization (mean=0, std=1).
-        - 'min-max': Scale such that min=0 and max=1.
-        - 'zero-max': Scale such that 0=0 and max=1.
-
+          - 'zscore': Apply z-score normalization (mean=0, std=1).
+          - 'min-max': Scale such that min=0 and max=1.
+          - 'zero-max': Scale such that 0=0 and max=1.
+    scaling_factors : dict or None, optional
+        A dictionary of precomputed scaling factors per column. For example:
+          - For 'zscore': {col: (mean, std)},
+          - For 'min-max': {col: (min, max)},
+          - For 'zero-max': {col: max}.
+        If provided, these are used instead of computing new factors.
+    
     Returns
     -------
-    pandas.DataFrame
-        A dataframe with normalized columns.
-
+    tuple of (pandas.DataFrame, dict)
+        A tuple containing:
+          - A dataframe with normalized columns.
+          - A dictionary of scaling factors computed or provided, keyed by column name.
+    
     Raises
     ------
     ValueError
         If an invalid method is provided.
-
+    
     Examples
     --------
-    Normalize with z-score:
-
-    >>> df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
-    >>> normalize_dataframe(df, method='zscore')
-
-    Normalize with min-max:
-
-    >>> normalize_dataframe(df, method='min-max')
-
-    Normalize with zero-max:
-
-    >>> normalize_dataframe(df, method='zero-max')
+    >>> norm_df, scales = normalize_dataframe(df, method='zscore')
+    >>> norm_df, scales = normalize_dataframe(df, method='min-max')
+    >>> norm_df, scales = normalize_dataframe(df, method='zero-max')
     """
+    import numpy as np
+    import pandas as pd
+
     method = method.lower()
     if method == 'none':
-        # Do nothing, just return the original DataFrame
-        return df
-    # Validate method
+        return df, {}
+
     if method not in ['zscore', 'min-max', 'zero-max']:
         raise ValueError("Invalid method. Choose 'zscore', 'min-max', or 'zero-max'.")
 
     df_normalized = df.copy()
+    computed_scaling = {} if scaling_factors is None else scaling_factors.copy()
 
     for col in df_normalized.columns:
         col_dtype = df_normalized[col].dtype
 
-        # Handle numerical columns
+        # Process numerical columns.
         if np.issubdtype(col_dtype, np.number):
             values = df_normalized[col]
-        # Handle datetime columns
+        # Process datetime columns by converting to seconds.
         elif np.issubdtype(col_dtype, np.datetime64):
-            values = df_normalized[col].astype('int64') / 1e9  # Convert to seconds
-        # Handle timedelta columns
+            values = df_normalized[col].astype('int64') / 1e9
+        # Process timedelta columns by converting to total seconds.
         elif np.issubdtype(col_dtype, np.timedelta64):
             values = df_normalized[col].dt.total_seconds()
         else:
-            continue  # Skip non-numeric, non-datetime, non-timedelta columns
+            continue
 
-        # Normalize the values
+        if col not in computed_scaling:
+            if method == 'zscore':
+                mean_val = values.mean()
+                std_val = values.std()
+                computed_scaling[col] = (mean_val, std_val)
+            elif method == 'min-max':
+                min_val = values.min()
+                max_val = values.max()
+                computed_scaling[col] = (min_val, max_val)
+            elif method == 'zero-max':
+                max_val = values.max()
+                computed_scaling[col] = max_val
+
         if method == 'zscore':
-            mean = values.mean()
-            std = values.std()
-            df_normalized[col] = (values - mean) / std
+            mean_val, std_val = computed_scaling[col]
+            if std_val == 0:
+                df_normalized[col] = 0
+            else:
+                df_normalized[col] = (values - mean_val) / std_val
         elif method == 'min-max':
-            min_val = values.min()
-            max_val = values.max()
-            df_normalized[col] = (values - min_val) / (max_val - min_val)
+            min_val, max_val = computed_scaling[col]
+            denom = max_val - min_val
+            if denom == 0:
+                df_normalized[col] = 0
+            else:
+                df_normalized[col] = (values - min_val) / denom
         elif method == 'zero-max':
-            max_val = values.max()
-            df_normalized[col] = values / max_val
+            max_val = computed_scaling[col]
+            if max_val == 0:
+                df_normalized[col] = 0
+            else:
+                df_normalized[col] = values / max_val
 
-    return df_normalized
+    return df_normalized, computed_scaling
+
