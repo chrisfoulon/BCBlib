@@ -123,11 +123,13 @@ def normalize_dataframe(df, method='min-max', scaling_factors=None):
           - 'zscore': Apply z-score normalization (mean=0, std=1).
           - 'min-max': Scale such that min=0 and max=1.
           - 'zero-max': Scale such that 0=0 and max=1.
+          - 'robust': Scale using robust methods (median and quantiles).
     scaling_factors : dict or None, optional
         A dictionary of precomputed scaling factors per column. For example:
           - For 'zscore': {col: (mean, std)},
           - For 'min-max': {col: (min, max)},
-          - For 'zero-max': {col: max}.
+          - For 'zero-max': {col: max},
+          - For 'robust': {col: scaler}.
         If provided, these are used instead of computing new factors.
     
     Returns
@@ -147,16 +149,14 @@ def normalize_dataframe(df, method='min-max', scaling_factors=None):
     >>> norm_df, scales = normalize_dataframe(df, method='zscore')
     >>> norm_df, scales = normalize_dataframe(df, method='min-max')
     >>> norm_df, scales = normalize_dataframe(df, method='zero-max')
+    >>> norm_df, scales = normalize_dataframe(df, method='robust')
     """
-    import numpy as np
-    import pandas as pd
-
     method = method.lower()
     if method == 'none':
         return df, {}
 
-    if method not in ['zscore', 'min-max', 'zero-max']:
-        raise ValueError("Invalid method. Choose 'zscore', 'min-max', or 'zero-max'.")
+    if method not in ['zscore', 'min-max', 'zero-max', 'robust']:
+        raise ValueError("Invalid method. Choose 'zscore', 'min-max', 'zero-max', or 'robust'.")
 
     df_normalized = df.copy()
     computed_scaling = {} if scaling_factors is None else scaling_factors.copy()
@@ -188,6 +188,15 @@ def normalize_dataframe(df, method='min-max', scaling_factors=None):
             elif method == 'zero-max':
                 max_val = values.max()
                 computed_scaling[col] = max_val
+            elif method == 'robust':
+                scaler = RobustScaler()
+                # Reshape for 1D data to fit sklearn's expected format
+                if values.ndim == 1:
+                    values_reshaped = values.values.reshape(-1, 1)
+                    scaler.fit(values_reshaped)
+                else:
+                    scaler.fit(values.values.reshape(-1, 1))
+                computed_scaling[col] = scaler
 
         if method == 'zscore':
             mean_val, std_val = computed_scaling[col]
@@ -208,6 +217,84 @@ def normalize_dataframe(df, method='min-max', scaling_factors=None):
                 df_normalized[col] = 0
             else:
                 df_normalized[col] = values / max_val
+        elif method == 'robust':
+            scaler = computed_scaling[col]
+            if values.ndim == 1:
+                values_reshaped = values.values.reshape(-1, 1)
+                scaled_values = scaler.transform(values_reshaped).flatten()
+            else:
+                scaled_values = scaler.transform(values.values.reshape(-1, 1)).flatten()
+            df_normalized[col] = scaled_values
 
     return df_normalized, computed_scaling
+
+
+def inverse_normalize_dataframe(df_normalized, scaling_factors, method='min-max'):
+    """
+    Reverse the normalization applied to a dataframe.
+    
+    Parameters
+    ----------
+    df_normalized : pandas.DataFrame
+        The normalized dataframe to restore to original scale.
+    scaling_factors : dict
+        The scaling factors dictionary returned by normalize_dataframe.
+    method : str, optional
+        The normalization method that was used. Options are:
+          - 'zscore': Z-score normalization.
+          - 'min-max': Min-max scaling.
+          - 'zero-max': Zero-max scaling.
+          - 'robust': Robust scaling.
+    
+    Returns
+    -------
+    pandas.DataFrame
+        A dataframe with the normalization reversed.
+    
+    Raises
+    ------
+    ValueError
+        If an invalid method is provided.
+    
+    Examples
+    --------
+    >>> original_df = inverse_normalize_dataframe(norm_df, scales, method='zscore')
+    >>> original_df = inverse_normalize_dataframe(norm_df, scales, method='min-max')
+    >>> original_df = inverse_normalize_dataframe(norm_df, scales, method='zero-max')
+    >>> original_df = inverse_normalize_dataframe(norm_df, scales, method='robust')
+    """
+    method = method.lower()
+    if method == 'none':
+        return df_normalized
+
+    if method not in ['zscore', 'min-max', 'zero-max', 'robust']:
+        raise ValueError("Invalid method. Choose 'zscore', 'min-max', 'zero-max', or 'robust'.")
+    
+    df_original = df_normalized.copy()
+    
+    for col in df_normalized.columns:
+        if col not in scaling_factors:
+            continue
+
+        values = df_normalized[col]
+        
+        if method == 'zscore':
+            mean_val, std_val = scaling_factors[col]
+            df_original[col] = values * std_val + mean_val
+        elif method == 'min-max':
+            min_val, max_val = scaling_factors[col]
+            df_original[col] = values * (max_val - min_val) + min_val
+        elif method == 'zero-max':
+            max_val = scaling_factors[col]
+            df_original[col] = values * max_val
+        elif method == 'robust':
+            scaler = scaling_factors[col]
+            if values.ndim == 1:
+                values_reshaped = values.values.reshape(-1, 1)
+                original_values = scaler.inverse_transform(values_reshaped).flatten()
+            else:
+                original_values = scaler.inverse_transform(values.values.reshape(-1, 1)).flatten()
+            df_original[col] = original_values
+            
+    return df_original
 
