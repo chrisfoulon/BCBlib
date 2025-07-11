@@ -11,7 +11,7 @@ from nilearn.regions import connected_regions
 from tqdm import tqdm
 import numpy as np
 from scipy.spatial.distance import euclidean
-from scipy.ndimage.measurements import center_of_mass
+from scipy.ndimage import center_of_mass
 
 import nibabel as nib
 
