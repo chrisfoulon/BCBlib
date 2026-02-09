@@ -16,7 +16,8 @@ setup(
     include_package_data=True,
     packages=find_packages(exclude=['__pycache__']),
     install_requires=['nibabel>=3', 'numpy', 'six', 'scipy', 'nilearn', 'scikit-learn',
-                      'tqdm', 'pandas', 'openpyxl', 'umap-learn', 'joblib', 'statsmodels', 'mne'],
+                      'tqdm', 'pandas', 'openpyxl', 'umap-learn', 'joblib', 'statsmodels', 'mne',
+                      'pymc>=5', 'arviz', 'matplotlib'],
     package_data={
         # If any package contains *.txt or *.rst files, include them:
         "": ["*.txt", "*.rst"],
