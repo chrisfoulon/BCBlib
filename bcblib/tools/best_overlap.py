@@ -152,8 +152,9 @@ def run_bayesian_model(df):
         sigma = pm.HalfNormal("sigma", sigma=5)
         obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=y)
 
-        # Sample from posterior
-        trace = pm.sample(2000, return_inferencedata=True, random_seed=42)
+        # Sample from posterior with log_likelihood for LOO-CV
+        trace = pm.sample(2000, return_inferencedata=True, random_seed=42,
+                         idata_kwargs={"log_likelihood": True})
         
         # Compute posterior predictive for R² calculation
         pm.sample_posterior_predictive(trace, extend_inferencedata=True)
@@ -190,7 +191,7 @@ def run_bayesian_model(df):
     }
 
 
-def _compute_statistical_quality(posterior_mean, relative_uncertainty, bayesian_r2):
+def _compute_statistical_quality(posterior_mean, relative_uncertainty, bayesian_r2, median_all_scores):
     """
     Compute statistical quality categories based on model fit, strength of association,
     and confidence in estimates. Categories reflect statistical confidence, not clinical
@@ -204,6 +205,8 @@ def _compute_statistical_quality(posterior_mean, relative_uncertainty, bayesian_
         Relative width of credible interval (CI_width / posterior_mean)
     bayesian_r2 : float
         Bayesian R² (model fit quality)
+    median_all_scores : float
+        Median of all posterior means (computed once for efficiency)
     
     Returns
     -------
@@ -226,8 +229,7 @@ def _compute_statistical_quality(posterior_mean, relative_uncertainty, bayesian_
     
     # Strength based on whether above median (could use absolute threshold if established)
     # For now using relative to allow interpretation even with varying scales
-    median_score = np.median(posterior_mean) if len(posterior_mean) > 1 else posterior_mean
-    high_strength = posterior_mean > median_score
+    high_strength = posterior_mean > median_all_scores
     
     # Combine criteria following hierarchical decision tree
     if bayesian_r2 > 0.7:  # Good model fit
@@ -392,9 +394,12 @@ def generate_report(df, model_results, output_csv):
     df["RelativeUncertainty"] = relative_uncertainty
     df["BayesianR2"] = bayesian_r2
 
+    # Compute median of all posterior means once for efficiency
+    median_all_scores = np.median(posterior_mean)
+    
     # Compute statistical quality categories
     statistical_quality = [
-        _compute_statistical_quality(pm, ru, bayesian_r2)
+        _compute_statistical_quality(pm, ru, bayesian_r2, median_all_scores)
         for pm, ru in zip(posterior_mean, relative_uncertainty)
     ]
     df["StatisticalQuality"] = statistical_quality
