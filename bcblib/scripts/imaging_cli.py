@@ -36,27 +36,50 @@ def _dim(text):
 # Multi-image rendering helpers
 # -----------------------------------------------------------------------
 
-def _render_info_multi(infos, styled):
-    """Print multiple header summaries.
+def _short_name(name: str, maxlen: int = 26) -> str:
+    """Truncate a filename for use as a table column header.
 
-    When *rich* is available, renders side-by-side panels sizing to the
-    terminal width.  Falls back to sequentially separated blocks otherwise.
+    Keeps the *end* of the name (which is usually the informative part)
+    and prefixes with ``…`` when truncation is needed.
     """
-    from bcblib.imaging.info import format_summary, format_summary_short
+    if len(name) <= maxlen:
+        return name
+    return "…" + name[-(maxlen - 1):]
+
+
+def _render_info_multi(infos, styled):
+    """Render one or more header summaries as rich Panels.
+
+    Single image: one centred Panel.
+    Multiple images: Panels arranged side-by-side via ``rich.Columns``
+    (wraps automatically when the terminal is too narrow).
+    Falls back to separator-delimited plain-text blocks when *rich* is
+    not available.
+    """
+    from bcblib.imaging.info import format_summary
 
     try:
         from rich.console import Console
         from rich.columns import Columns
         from rich.panel import Panel
 
+        console = Console()
         panels = []
         for info in infos:
             basename = Path(info.get("filename", "<in-memory>")).name
             body = format_summary(info, styled=False)
             panels.append(
-                Panel(body, title=f"[bold cyan]{basename}[/bold cyan]", expand=True)
+                Panel(
+                    body,
+                    title=f"[bold cyan]{_short_name(basename, maxlen=40)}[/bold cyan]",
+                    expand=True,
+                )
             )
-        Console().print(Columns(panels, equal=True))
+
+        if len(panels) == 1:
+            console.print(panels[0])
+        else:
+            console.print(Columns(panels, equal=True))
 
     except ImportError:
         for i, info in enumerate(infos):
@@ -69,10 +92,13 @@ def _render_info_multi(infos, styled):
 
 
 def _render_header_compare(dumps, filenames):
-    """Print a field-by-field comparison table for multiple images.
+    """Render a field-by-field comparison table for multiple images.
 
-    Uses *rich* when available (differences highlighted in yellow).
-    Falls back to a plain fixed-width text table otherwise.
+    Uses *rich* when available: differing fields are highlighted in yellow
+    and marked with ``*``.  Falls back to a plain fixed-width text table.
+
+    Long filenames in column headers are truncated on the left so they
+    fit in 80-column terminals when comparing two images.
     """
     names = [Path(f).name for f in filenames]
     all_fields = list(dumps[0].keys())
@@ -85,15 +111,18 @@ def _render_header_compare(dumps, filenames):
         from rich.table import Table
         from rich import box
 
+        # Truncate long column headers so two cols fit comfortably at 80 chars
+        col_maxlen = max(14, (76 - 24) // len(names) - 2)
+        short_names = [_short_name(n, maxlen=col_maxlen) for n in names]
+
         table = Table(
             title="NIfTI Header Comparison",
             box=box.SIMPLE_HEAVY,
             show_lines=True,
-            highlight=False,
         )
         table.add_column("Field", style="bold", no_wrap=True, min_width=22)
-        for name in names:
-            table.add_column(name, overflow="fold", min_width=14)
+        for sn in short_names:
+            table.add_column(sn, overflow="fold", min_width=14)
 
         diff_count = 0
         for field in all_fields:
@@ -109,11 +138,11 @@ def _render_header_compare(dumps, filenames):
         console.print(table)
         if diff_count:
             console.print(
-                f"[dim]{diff_count} field(s) marked [yellow]*[/yellow] differ between images.[/dim]"
+                f"[dim]{diff_count} field(s) marked "
+                "[yellow]*[/yellow] differ between images.[/dim]"
             )
 
     except ImportError:
-        # Plain-text fallback
         col0_w = max(len("Field"), max(len(f) for f in all_fields)) + 2
         col_ws = [
             max(len(n), max(len(str(d.get(f, ""))) for f in all_fields))
@@ -157,7 +186,7 @@ def bcb_info():
     if args.no_color:
         os.environ["NO_COLOR"] = "1"
 
-    from bcblib.imaging.info import header_summary, format_summary, format_summary_short
+    from bcblib.imaging.info import header_summary, format_summary_short
 
     infos = [header_summary(img) for img in args.images]
 
@@ -166,10 +195,8 @@ def bcb_info():
             print(format_summary_short(info))
         return
 
-    if len(infos) == 1:
-        print(format_summary(infos[0], styled=_use_style()))
-    else:
-        _render_info_multi(infos, styled=_use_style())
+    # Single or multi: always render through the rich (Panel/Columns) path
+    _render_info_multi(infos, styled=_use_style())
 
 
 # -----------------------------------------------------------------------
