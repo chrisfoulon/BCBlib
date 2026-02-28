@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 
 # -----------------------------------------------------------------------
@@ -32,17 +33,123 @@ def _dim(text):
 
 
 # -----------------------------------------------------------------------
+# Multi-image rendering helpers
+# -----------------------------------------------------------------------
+
+def _render_info_multi(infos, styled):
+    """Print multiple header summaries.
+
+    When *rich* is available, renders side-by-side panels sizing to the
+    terminal width.  Falls back to sequentially separated blocks otherwise.
+    """
+    from bcblib.imaging.info import format_summary, format_summary_short
+
+    try:
+        from rich.console import Console
+        from rich.columns import Columns
+        from rich.panel import Panel
+
+        panels = []
+        for info in infos:
+            basename = Path(info.get("filename", "<in-memory>")).name
+            body = format_summary(info, styled=False)
+            panels.append(
+                Panel(body, title=f"[bold cyan]{basename}[/bold cyan]", expand=True)
+            )
+        Console().print(Columns(panels, equal=True))
+
+    except ImportError:
+        for i, info in enumerate(infos):
+            if i > 0:
+                print()
+            basename = Path(info.get("filename", "<in-memory>")).name
+            bar = "─" * max(0, 52 - len(basename))
+            print(f"──  {basename}  {bar}")
+            print(format_summary(info, styled=styled))
+
+
+def _render_header_compare(dumps, filenames):
+    """Print a field-by-field comparison table for multiple images.
+
+    Uses *rich* when available (differences highlighted in yellow).
+    Falls back to a plain fixed-width text table otherwise.
+    """
+    names = [Path(f).name for f in filenames]
+    all_fields = list(dumps[0].keys())
+
+    def _differs(field):
+        return len({str(d.get(field, "")) for d in dumps}) > 1
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        from rich import box
+
+        table = Table(
+            title="NIfTI Header Comparison",
+            box=box.SIMPLE_HEAVY,
+            show_lines=True,
+            highlight=False,
+        )
+        table.add_column("Field", style="bold", no_wrap=True, min_width=22)
+        for name in names:
+            table.add_column(name, overflow="fold", min_width=14)
+
+        diff_count = 0
+        for field in all_fields:
+            values = [str(d.get(field, "")) for d in dumps]
+            differs = len(set(values)) > 1
+            row_style = "yellow" if differs else ""
+            marker = " [dim]*[/dim]" if differs else ""
+            table.add_row(field + marker, *values, style=row_style)
+            if differs:
+                diff_count += 1
+
+        console = Console()
+        console.print(table)
+        if diff_count:
+            console.print(
+                f"[dim]{diff_count} field(s) marked [yellow]*[/yellow] differ between images.[/dim]"
+            )
+
+    except ImportError:
+        # Plain-text fallback
+        col0_w = max(len("Field"), max(len(f) for f in all_fields)) + 2
+        col_ws = [
+            max(len(n), max(len(str(d.get(f, ""))) for f in all_fields))
+            for n, d in zip(names, dumps)
+        ]
+        sep = "  "
+        header = f"{'Field':<{col0_w}}" + sep + sep.join(
+            f"{n:<{w}}" for n, w in zip(names, col_ws)
+        )
+        print(header)
+        print("-" * len(header))
+        for field in all_fields:
+            vals = [str(d.get(field, "")) for d in dumps]
+            marker = " *" if _differs(field) else "  "
+            row = f"{(field + marker):<{col0_w}}" + sep + sep.join(
+                f"{v:<{w}}" for v, w in zip(vals, col_ws)
+            )
+            print(row)
+
+
+# -----------------------------------------------------------------------
 # bcb-info  (fslinfo equivalent)
 # -----------------------------------------------------------------------
 
 def bcb_info():
     parser = argparse.ArgumentParser(
         prog="bcb-info",
-        description="Print a concise summary of NIfTI header information (like fslinfo).",
+        description=(
+            "Print a concise summary of NIfTI header information (like fslinfo). "
+            "Accepts one or more images; with multiple images the summaries are "
+            "displayed side-by-side when the terminal is wide enough."
+        ),
     )
-    parser.add_argument("image", help="Path to a NIfTI file")
+    parser.add_argument("images", nargs="+", help="Path(s) to NIfTI file(s)")
     parser.add_argument("--short", action="store_true",
-                        help="One-liner nib-ls style output")
+                        help="One-liner nib-ls style output (one line per image)")
     parser.add_argument("--no-color", action="store_true",
                         help="Disable ANSI styling")
     args = parser.parse_args()
@@ -52,11 +159,17 @@ def bcb_info():
 
     from bcblib.imaging.info import header_summary, format_summary, format_summary_short
 
-    info = header_summary(args.image)
+    infos = [header_summary(img) for img in args.images]
+
     if args.short:
-        print(format_summary_short(info))
+        for info in infos:
+            print(format_summary_short(info))
+        return
+
+    if len(infos) == 1:
+        print(format_summary(infos[0], styled=_use_style()))
     else:
-        print(format_summary(info, styled=_use_style()))
+        _render_info_multi(infos, styled=_use_style())
 
 
 # -----------------------------------------------------------------------
@@ -66,20 +179,40 @@ def bcb_info():
 def bcb_header():
     parser = argparse.ArgumentParser(
         prog="bcb-header",
-        description="Dump all NIfTI header fields (like fslhd).",
+        description=(
+            "Dump all NIfTI header fields (like fslhd). "
+            "With multiple images, shows a side-by-side comparison table; "
+            "use --sequential to print each header separately instead."
+        ),
     )
-    parser.add_argument("image", help="Path to a NIfTI file")
+    parser.add_argument("images", nargs="+", help="Path(s) to NIfTI file(s)")
     parser.add_argument("--json", dest="as_json", action="store_true",
-                        help="Output as JSON")
+                        help="Output as JSON (array for multiple images)")
+    parser.add_argument("--sequential", action="store_true",
+                        help="Print each header separately even when multiple images are given")
     args = parser.parse_args()
 
     from bcblib.imaging.info import header_dump, format_dump
 
-    dump = header_dump(args.image)
+    dumps = [header_dump(img) for img in args.images]
+
     if args.as_json:
-        print(json.dumps(dump, indent=2, default=str))
+        if len(args.images) == 1:
+            print(json.dumps(dumps[0], indent=2, default=str))
+        else:
+            result = {img: dump for img, dump in zip(args.images, dumps)}
+            print(json.dumps(result, indent=2, default=str))
+        return
+
+    if len(dumps) == 1 or args.sequential:
+        for i, (img, dump) in enumerate(zip(args.images, dumps)):
+            if i > 0:
+                print()
+            if len(dumps) > 1:
+                print(f"── {Path(img).name} " + "─" * max(0, 52 - len(Path(img).name)))
+            print(format_dump(dump))
     else:
-        print(format_dump(dump))
+        _render_header_compare(dumps, args.images)
 
 
 # -----------------------------------------------------------------------
