@@ -32,8 +32,15 @@ setup(
                             'pick_up_matched_synth_lesions = bcblib.scripts.pick_up_synth_lesions:main',
                             'randomise_helper = bcblib.tools.randomise_helper:randomise_helper',
                             'anacom2 = bcblib.anacom2.anacom2:anacom2',
-                            'ml_results = bcblib.scripts.ml_results:main']
-        # 'console_scripts': ['dicom_conversion = data_identification.scripts.dicom_conversion:convert']
+                            'ml_results = bcblib.scripts.ml_results:main',
+                            'bcb-info = bcblib.scripts.imaging_cli:bcb_info',
+                            'bcb-header = bcblib.scripts.imaging_cli:bcb_header',
+                            'bcb-stats = bcblib.scripts.imaging_cli:bcb_stats',
+                            'bcb-orient = bcblib.scripts.imaging_cli:bcb_orient',
+                            'bcb-roi = bcblib.scripts.imaging_cli:bcb_roi',
+                            'bcb-merge = bcblib.scripts.imaging_cli:bcb_merge',
+                            'bcb-split = bcblib.scripts.imaging_cli:bcb_split',
+                            'bcb-convert = bcblib.scripts.imaging_cli:bcb_convert']
     },
     project_urls={  # Optional
         'Source': 'https://github.com/chrisfoulon/BCBlib',
