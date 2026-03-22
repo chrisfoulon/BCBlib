@@ -21,6 +21,158 @@ import arviz as az
 import matplotlib.pyplot as plt
 
 
+# ---------------------------------------------------------------------------
+# Diagnostic helpers
+# ---------------------------------------------------------------------------
+
+def _write_diagnostic(path, lines):
+    """Print *lines* to the console and, when *path* is not None, also write
+    them to a plain-text file.  Each element of *lines* is a string; a
+    newline is appended automatically.
+
+    Parameters
+    ----------
+    path : str or None
+        Destination file.  The parent directory must already exist.
+        Pass ``None`` to suppress file output (console only).
+    lines : list of str
+        Lines to emit.
+    """
+    for line in lines:
+        print(line)
+    if path is not None:
+        with open(path, "w") as fh:
+            fh.write("\n".join(lines) + "\n")
+
+
+def _check_image_space(img_a, name_a, img_b, name_b, on_mismatch="error"):
+    """Verify that two NIfTI images share the same voxel grid.
+
+    Three properties are checked in order:
+
+    1. **Shape** — spatial dimensions (first three axes) must be identical.
+       A shape mismatch always raises ``ValueError`` regardless of
+       *on_mismatch*, because the downstream computation would be
+       numerically meaningless (numpy would either broadcast incorrectly or
+       crash with a cryptic message).
+
+    2. **Affine** — checked with ``numpy.allclose`` using an adaptive
+       tolerance ``atol = min(1e-3, min_voxel_size)`` so that the tolerance
+       is always smaller than one voxel (sub-voxel precision) *and* never
+       looser than 1 mm (sub-millimetre precision for large-voxel data).
+
+    3. **Orientation codes** — both images are brought to canonical
+       orientation via ``nibabel.as_closest_canonical`` and their axis
+       codes (e.g. ``('R', 'A', 'S')``) are compared.  A mismatch after
+       canonicalisation indicates a genuine orientation difference, not
+       merely a storage convention difference.
+
+    Parameters
+    ----------
+    img_a, img_b : nibabel spatial image
+        Loaded NIfTI images to compare.
+    name_a, name_b : str
+        Human-readable labels for the images (used in error/warning messages).
+    on_mismatch : {'error', 'warn'}
+        What to do when an affine or orientation mismatch is detected.
+        ``'error'`` (default) raises ``ValueError``; ``'warn'`` prints a
+        warning and returns the diagnostic information so the caller can
+        decide whether to proceed.
+
+    Returns
+    -------
+    info : dict
+        Diagnostic information with keys:
+        ``shape_a``, ``shape_b``, ``affine_a``, ``affine_b``,
+        ``atol``, ``orientation_a``, ``orientation_b``,
+        ``issues`` (list of human-readable issue strings, empty when all
+        checks pass).
+
+    Raises
+    ------
+    ValueError
+        On shape mismatch (always) or on affine/orientation mismatch when
+        *on_mismatch* is ``'error'``.
+    """
+    shape_a = img_a.shape[:3]
+    shape_b = img_b.shape[:3]
+    affine_a = img_a.affine
+    affine_b = img_b.affine
+
+    # Adaptive tolerance: whichever is stricter — 1 mm (submillimetre cap) or
+    # one voxel size (sub-voxel precision when voxels are smaller than 1 mm).
+    # For typical medical imaging this gives 1.0 mm for large voxels and
+    # matches the voxel size for high-resolution sub-millimetre data.
+    min_voxel_size = float(np.min(np.abs(np.diag(affine_a)[:3])))
+    atol = min(1.0, min_voxel_size)
+
+    # Orientation codes after canonicalisation
+    orientation_a = nib.aff2axcodes(nib.as_closest_canonical(img_a).affine)
+    orientation_b = nib.aff2axcodes(nib.as_closest_canonical(img_b).affine)
+
+    info = {
+        "shape_a": shape_a,
+        "shape_b": shape_b,
+        "affine_a": affine_a,
+        "affine_b": affine_b,
+        "atol": atol,
+        "orientation_a": orientation_a,
+        "orientation_b": orientation_b,
+        "issues": [],
+    }
+
+    # --- 1. Shape check (always fatal) ---
+    if shape_a != shape_b:
+        raise ValueError(
+            f"Image space mismatch — SHAPE:\n"
+            f"  {name_a}: shape = {shape_a}\n"
+            f"  {name_b}: shape = {shape_b}\n"
+            f"Both images must have the same voxel grid. "
+            f"Check that all inputs are in the same space (e.g. MNI152)."
+        )
+
+    # --- 2. Affine check ---
+    if not np.allclose(affine_a, affine_b, atol=atol):
+        diff = np.abs(affine_a - affine_b)
+        max_diff = float(diff.max())
+        issue = (
+            f"Affine mismatch between '{name_a}' and '{name_b}' "
+            f"(max element-wise difference = {max_diff:.6f}, tolerance = {atol:.6f}).\n"
+            f"  {name_a} affine:\n{affine_a}\n"
+            f"  {name_b} affine:\n{affine_b}\n"
+            f"Tip: ensure both images are registered to the same reference "
+            f"and saved with the same voxel size and origin."
+        )
+        info["issues"].append(issue)
+
+    # --- 3. Orientation check (post-canonicalisation) ---
+    if orientation_a != orientation_b:
+        issue = (
+            f"Orientation mismatch between '{name_a}' and '{name_b}' "
+            f"after canonicalisation:\n"
+            f"  {name_a}: {orientation_a}\n"
+            f"  {name_b}: {orientation_b}\n"
+            f"Tip: use a consistent NIfTI convention (e.g. convert with "
+            f"fslreorient2std or nibabel.as_closest_canonical) before running."
+        )
+        info["issues"].append(issue)
+
+    # --- Handle detected issues ---
+    if info["issues"]:
+        header = (
+            f"[WARNING] Image space problem(s) detected comparing "
+            f"'{name_a}' and '{name_b}':"
+        )
+        for issue in info["issues"]:
+            if on_mismatch == "error":
+                raise ValueError(f"{header}\n{issue}")
+            else:
+                print(f"{header}")
+                print(f"  {issue}")
+
+    return info
+
+
 def compute_cluster_features(preserved_map, parcellation_path):
     """
     Compute connectivity features for each parcellation region using a preserved connection map
@@ -50,6 +202,17 @@ def compute_cluster_features(preserved_map, parcellation_path):
     """
     parc_img = nib.load(parcellation_path)
     parc_data = parc_img.get_fdata().astype(int)
+
+    # Belt-and-suspenders: catch shape mismatch here even if the caller
+    # already called _check_image_space (compute_cluster_features is public).
+    if preserved_map.shape != parc_data.shape:
+        raise ValueError(
+            f"Shape mismatch inside compute_cluster_features: "
+            f"preserved map {preserved_map.shape} != "
+            f"parcellation {parc_data.shape}. "
+            f"Ensure the preserved connection map and the parcellation atlas "
+            f"are in the same voxel grid (same shape, same affine)."
+        )
 
     cluster_ids = np.unique(parc_data)
     cluster_ids = cluster_ids[cluster_ids > 0]
@@ -478,7 +641,8 @@ def translate_cluster_labels(atlas_txt_path, input_csv, output_csv):
     print(f"Translated report saved as {output_csv}")
 
 def run_connectivity_analysis(patient_disconnectome_paths, cluster_disconnectome_paths,
-                              parcellation_path, output_folder, atlas_txt_path=None):
+                              parcellation_path, output_folder, atlas_txt_path=None,
+                              on_space_mismatch="error"):
     """
     Run the complete analysis for one or more patient disconnectome maps with one or more
     cluster disconnectome maps. For each patient and cluster combination, compute preserved
@@ -500,16 +664,23 @@ def run_connectivity_analysis(patient_disconnectome_paths, cluster_disconnectome
         Path to the folder where output files (reports, derivatives) will be saved.
     atlas_txt_path : str, optional
         File path to the atlas text file for translating region IDs to anatomical names.
+    on_space_mismatch : {'error', 'warn'}, optional
+        Action to take when an affine or orientation mismatch is detected between input
+        images.  ``'error'`` (default) aborts with a ``ValueError``; ``'warn'`` prints
+        a warning and continues.  Shape mismatches always raise ``ValueError`` regardless
+        of this setting.
 
     Additional Files Saved
     ------------------------
-    For each patient, the following files are saved in the output_folder (or a subfolder for the patient):
-      - <patient_basename>_analysis_report.csv : CSV report with connectivity statistics for all clusters.
-      - translated_<patient_basename>_analysis_report.csv : (if atlas_txt_path provided) CSV report with region names.
-      - <patient_basename>_<cluster_name>_preserved.nii.gz : Preserved connections NIfTI images (one per cluster).
+    For each patient, the following files are saved in the output_folder:
+      - <patient_basename>_analysis_report.csv : CSV report with connectivity statistics.
+      - translated_<patient_basename>_analysis_report.csv : (if atlas_txt_path provided)
+      - <patient_basename>_<cluster_name>_preserved.nii.gz : Preserved connection maps.
       - <patient_basename>_analysis_report_plot.png : Plot of connectivity scores.
-      - command_used.txt : A text file containing the command-line call used to run the tool.
-      - A 'derivatives' subfolder is created to store preserved connection images.
+      - <patient_basename>_FAILED_diagnostic.txt : Written instead of a report when no
+        cluster-region overlaps are found; contains full input diagnostics.
+      - command_used.txt : The command-line call used to run the tool.
+      - A 'derivatives' subfolder stores the preserved connection images.
     """
     os.makedirs(output_folder, exist_ok=True)
 
@@ -519,9 +690,14 @@ def run_connectivity_analysis(patient_disconnectome_paths, cluster_disconnectome
 
     if isinstance(patient_disconnectome_paths, str):
         patient_disconnectome_paths = [patient_disconnectome_paths]
-    
+
     if isinstance(cluster_disconnectome_paths, str):
         cluster_disconnectome_paths = [cluster_disconnectome_paths]
+
+    # Load the parcellation once so we can check its space against each patient
+    parc_img = nib.load(parcellation_path)
+    parc_n_regions = len(np.unique(parc_img.get_fdata().astype(int))) - 1  # exclude 0
+    parc_shape = parc_img.shape[:3]
 
     for patient_path in patient_disconnectome_paths:
         patient_basename = Path(patient_path).stem
@@ -530,39 +706,142 @@ def run_connectivity_analysis(patient_disconnectome_paths, cluster_disconnectome
         patient_img = nib.load(patient_path)
         patient_data = patient_img.get_fdata()
 
+        # --- Space check: patient vs parcellation ---
+        _check_image_space(
+            patient_img, patient_basename,
+            parc_img, Path(parcellation_path).name,
+            on_mismatch=on_space_mismatch,
+        )
+
+        # Per-cluster diagnostics collected for the failure report
+        cluster_diagnostics = []
+
         # Process each cluster disconnectome
         all_dfs = []
         for cluster_path in cluster_disconnectome_paths:
             cluster_name = Path(cluster_path).stem
             print(f"  Processing cluster: {cluster_name}")
-            
+
             cluster_img = nib.load(cluster_path)
+
+            # --- Space check: patient vs cluster ---
+            _check_image_space(
+                patient_img, patient_basename,
+                cluster_img, cluster_name,
+                on_mismatch=on_space_mismatch,
+            )
+
             cluster_data = cluster_img.get_fdata()
 
             # Compute preserved connections using probability multiplication:
             # P(preserved) = P(cluster affected) × P(NOT disconnected by patient)
-            preserved = cluster_data * (1 - patient_data)
+            try:
+                preserved = cluster_data * (1 - patient_data)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Could not compute preserved connections for patient "
+                    f"'{patient_basename}' and cluster '{cluster_name}'.\n"
+                    f"Patient shape: {patient_data.shape}, "
+                    f"Cluster shape: {cluster_data.shape}.\n"
+                    f"Original numpy error: {exc}"
+                ) from exc
+
+            n_nonzero_preserved = int(np.sum(preserved > 0))
 
             # Save the preserved image in the derivatives folder
             derivatives_folder = os.path.join(output_folder, "derivatives", patient_basename)
             os.makedirs(derivatives_folder, exist_ok=True)
             preserved_img = nib.Nifti1Image(preserved, affine=cluster_img.affine)
-            preserved_path = os.path.join(derivatives_folder, f"{patient_basename}_{cluster_name}_preserved.nii.gz")
+            preserved_path = os.path.join(
+                derivatives_folder,
+                f"{patient_basename}_{cluster_name}_preserved.nii.gz",
+            )
             nib.save(preserved_img, preserved_path)
             print(f"    Saved preserved image: {preserved_path}")
 
             # Compute features using the preserved image and parcellation
             df = compute_cluster_features(preserved, parcellation_path)
-            df['Source_Cluster'] = cluster_name
+            df["Source_Cluster"] = cluster_name
+
+            n_matched_regions = len(df)
+            cluster_diagnostics.append({
+                "cluster": cluster_name,
+                "cluster_shape": cluster_data.shape,
+                "n_nonzero_preserved": n_nonzero_preserved,
+                "n_matched_regions": n_matched_regions,
+            })
+
+            if df.empty:
+                print(
+                    f"  [WARNING] Cluster '{cluster_name}': the preserved connection map "
+                    f"has {n_nonzero_preserved} non-zero voxel(s) but none overlapped with "
+                    f"any parcellation region. This cluster contributes 0 observations to "
+                    f"the model."
+                )
+
             all_dfs.append(df)
 
         # Combine all clusters into a single dataframe
-        if not all_dfs:
-            print(f"No preserved connections found for patient: {patient_basename}")
-            continue
-            
-        combined_df = pd.concat(all_dfs, ignore_index=True)
+        combined_df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
         print(f"  Total cluster-region combinations: {len(combined_df)}")
+
+        # --- Empty result: write diagnostic and skip this patient ---
+        if combined_df.empty:
+            diag_path = os.path.join(
+                output_folder, f"{patient_basename}_FAILED_diagnostic.txt"
+            )
+            diag_lines = [
+                "=" * 70,
+                f"ANALYSIS FAILED — no cluster-region overlaps found",
+                f"Patient: {patient_basename}  ({patient_path})",
+                "=" * 70,
+                "",
+                "INPUT SUMMARY",
+                "-" * 40,
+                f"  Patient disconnectome : {patient_path}",
+                f"    shape              : {patient_data.shape}",
+                f"    n non-zero voxels  : {int(np.sum(patient_data > 0))}",
+                f"  Parcellation         : {parcellation_path}",
+                f"    shape              : {parc_shape}",
+                f"    n regions (labels) : {parc_n_regions}",
+                "",
+                "PER-CLUSTER BREAKDOWN",
+                "-" * 40,
+            ]
+            for cd in cluster_diagnostics:
+                diag_lines += [
+                    f"  Cluster : {cd['cluster']}",
+                    f"    shape                   : {cd['cluster_shape']}",
+                    f"    non-zero voxels in map  : {cd['n_nonzero_preserved']}",
+                    f"    parcellation regions hit: {cd['n_matched_regions']}",
+                    "",
+                ]
+            diag_lines += [
+                "POSSIBLE CAUSES",
+                "-" * 40,
+                "  1. The preserved connection map is all zeros.",
+                "     → The patient disconnectome may cover the entire cluster region.",
+                "       Check that patient_prob values are in [0, 1].",
+                "  2. The preserved map and parcellation do not spatially overlap.",
+                "     → Confirm both are in the same reference space (e.g. MNI152).",
+                "     → A hemisphere-specific parcellation will show 0 overlap if the",
+                "       preserved connections are entirely in the other hemisphere.",
+                "  3. Image affine or voxel-size mismatch (silent misregistration).",
+                "     → Re-run with -sm warn to see space-check details, or inspect",
+                "       the affines with: python -c \"import nibabel as nib; "
+                "print(nib.load('img.nii.gz').affine)\"",
+                "  4. All cluster voxel values are zero (empty cluster map).",
+                "",
+                "No output report was generated for this patient.",
+                "=" * 70,
+            ]
+            _write_diagnostic(diag_path, diag_lines)
+            print(
+                f"  [ERROR] Skipping patient '{patient_basename}': "
+                f"no cluster-region overlaps found. "
+                f"Diagnostic written to: {diag_path}"
+            )
+            continue
 
         # Run Bayesian model on combined data (returns dict with trace, R², LOO, effect sizes)
         model_results = run_bayesian_model(combined_df)
@@ -573,7 +852,9 @@ def run_connectivity_analysis(patient_disconnectome_paths, cluster_disconnectome
 
         # Generate translated report if atlas text file is provided
         if atlas_txt_path:
-            translated_csv = os.path.join(output_folder, f"translated_{patient_basename}_analysis_report.csv")
+            translated_csv = os.path.join(
+                output_folder, f"translated_{patient_basename}_analysis_report.csv"
+            )
             translate_cluster_labels(atlas_txt_path, report_csv, translated_csv)
 
         print(f"Finished processing patient: {patient_basename}")

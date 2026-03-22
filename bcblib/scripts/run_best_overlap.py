@@ -27,6 +27,15 @@ def parse_args():
                         help="Folder where output files will be saved.")
     parser.add_argument("--atlas_txt",
                         help="Optional: File path to the atlas text file for translating region IDs to anatomical names.")
+    parser.add_argument("-sm", "--on-space-mismatch",
+                        choices=["error", "warn"], default="error",
+                        dest="on_space_mismatch",
+                        help=(
+                            "Action when an affine or orientation mismatch is detected "
+                            "between input images. 'error' (default) aborts with a clear "
+                            "explanation; 'warn' prints a warning and continues. Shape "
+                            "mismatches always abort regardless of this setting."
+                        ))
     return parser.parse_args()
 
 def main_script():
@@ -35,7 +44,8 @@ def main_script():
                               args.cluster_disconnectome,
                               args.parcellation,
                               args.output_folder,
-                              args.atlas_txt)
+                              args.atlas_txt,
+                              on_space_mismatch=args.on_space_mismatch)
 
 if __name__ == "__main__":
     main_script()
