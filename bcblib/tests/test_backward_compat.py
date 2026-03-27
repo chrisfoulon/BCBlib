@@ -105,6 +105,36 @@ class TestImagesUtilsShims:
             assert result[0, 0, 0] == 1
 
 
+class TestMiscSplitRegression:
+    """misc.py split functions must remain importable and produce correct output."""
+
+    def _make_info_dict(self):
+        """Build minimal synthetic info_dict matching create_balanced_split's format."""
+        rng = np.random.default_rng(0)
+        keys = [f"subj_{i:02d}" for i in range(30)]
+        clusters = ["__AB", "__CD", "__EF"]  # bilat_offset=2 strips "xx" prefix
+        info_dict = {
+            k: {
+                'lesion_cluster': clusters[i % len(clusters)],
+                'volume': float(rng.integers(100, 5000)),
+            }
+            for i, k in enumerate(keys)
+        }
+        return keys, info_dict
+
+    def test_import_still_works(self):
+        from bcblib.tools.misc import permutation_balanced_splits  # noqa: F401
+
+    def test_output_format(self):
+        from bcblib.tools.misc import permutation_balanced_splits
+        keys, info_dict = self._make_info_dict()
+        result = permutation_balanced_splits(keys, info_dict, num_permutations=10)
+        assert isinstance(result, list)
+        assert len(result) == 5
+        for split in result:
+            assert isinstance(split, dict)
+
+
 class TestNoCircularImports:
     """Verify no import cycle between imaging.* and tools.*."""
 

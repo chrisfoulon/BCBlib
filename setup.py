@@ -40,7 +40,8 @@ setup(
                             'bcb-roi = bcblib.scripts.imaging_cli:bcb_roi',
                             'bcb-merge = bcblib.scripts.imaging_cli:bcb_merge',
                             'bcb-split = bcblib.scripts.imaging_cli:bcb_split',
-                            'bcb-convert = bcblib.scripts.imaging_cli:bcb_convert']
+                            'bcb-convert = bcblib.scripts.imaging_cli:bcb_convert',
+                            'bcb-dataset-split = bcblib.scripts.run_dataset_splitting:main']
     },
     project_urls={  # Optional
         'Source': 'https://github.com/chrisfoulon/BCBlib',

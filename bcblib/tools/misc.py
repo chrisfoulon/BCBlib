@@ -12,6 +12,11 @@ from bcblib.tools.general_utils import open_json
 from scipy.stats import kruskal
 
 
+# NOTE: This is the original implementation used in [paper citation].
+# It is kept frozen as the published implementation. For new code use
+# `bcblib.tools.dataset_splitting.permutation_balanced_splits`, which
+# generalises this algorithm to arbitrary categorical groupings and
+# multiple covariates.
 def create_balanced_split(info_dict_keys, info_dict, num_splits=5):
     cluster_dict = defaultdict(list)
     bilat_offset = 2
@@ -79,6 +84,11 @@ def create_balanced_split(info_dict_keys, info_dict, num_splits=5):
     return split_dict, mean_splits, std_splits, st, pval
 
 
+# NOTE: This is the original implementation used in [paper citation].
+# It is kept frozen as the published implementation. For new code use
+# `bcblib.tools.dataset_splitting.permutation_balanced_splits`, which
+# generalises this algorithm to arbitrary categorical groupings and
+# multiple covariates.
 def permutation_balanced_splits(info_dict_keys, info_dict, num_permutations):
     """
     Creates a balanced split of the data by permuting the keys of the info_dict and selecting the best split
