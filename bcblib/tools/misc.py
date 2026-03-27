@@ -1,5 +1,8 @@
+import math
 from collections import defaultdict
 import random
+
+from scipy.special import gamma
 from tqdm import tqdm
 
 import numpy as np
@@ -9,6 +12,11 @@ from bcblib.tools.general_utils import open_json
 from scipy.stats import kruskal
 
 
+# NOTE: This is the original implementation used in [paper citation].
+# It is kept frozen as the published implementation. For new code use
+# `bcblib.tools.dataset_splitting.permutation_balanced_splits`, which
+# generalises this algorithm to arbitrary categorical groupings and
+# multiple covariates.
 def create_balanced_split(info_dict_keys, info_dict, num_splits=5):
     cluster_dict = defaultdict(list)
     bilat_offset = 2
@@ -76,6 +84,11 @@ def create_balanced_split(info_dict_keys, info_dict, num_splits=5):
     return split_dict, mean_splits, std_splits, st, pval
 
 
+# NOTE: This is the original implementation used in [paper citation].
+# It is kept frozen as the published implementation. For new code use
+# `bcblib.tools.dataset_splitting.permutation_balanced_splits`, which
+# generalises this algorithm to arbitrary categorical groupings and
+# multiple covariates.
 def permutation_balanced_splits(info_dict_keys, info_dict, num_permutations):
     """
     Creates a balanced split of the data by permuting the keys of the info_dict and selecting the best split
@@ -114,4 +127,22 @@ def permutation_balanced_splits(info_dict_keys, info_dict, num_permutations):
     print(f' BEST SPLITS ===> Means: {best_mean_range}, Stds: {best_std_range}, Stat: {best_st}, P-Value:{best_pvalue}')
     return best_splits
 
+
+def calculate_hypersphere_radius(max_size, n_dim):
+    """
+    Calculate the radius of a hypersphere in N-dimensional space given the volume (max_size).
+
+    Parameters
+    ----------
+    max_size : float
+        The volume of the hypersphere.
+    n_dim : int
+        The number of dimensions (N).
+
+    Returns
+    -------
+    radius : float
+        The radius of the hypersphere in N-dimensional space.
+    """
+    return (max_size * gamma(n_dim / 2 + 1) / math.pi**(n_dim / 2))**(1 / n_dim)
 

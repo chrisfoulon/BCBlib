@@ -2,7 +2,24 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.ndimage import label
 from scipy.stats import mannwhitneyu, ttest_ind
+from sklearn.preprocessing import RobustScaler
 from tqdm import tqdm
+
+
+def coord_in_array(coord, array):
+    """
+    Check if a coordinate is within the bounds of a numpy array.
+
+    Parameters
+    ----------
+    coord: tuple
+    array: np.ndarray
+
+    Returns
+    -------
+    bool
+    """
+    return all(0 <= c < array.shape[i] for i, c in enumerate(coord))
 
 
 def find_centroid_and_check(array, check_inside=True):
@@ -90,3 +107,124 @@ def separate_clusters_and_extract_coords(array, coords_array):
 
     return clusters, indices_lists
 
+
+def normalize_data(data, method='min-max', feature_range=(0, 1)):
+    """
+    Normalize data with different methods.
+    
+    Parameters:
+    -----------
+    data : numpy.ndarray
+        The data to normalize.
+    method : str
+        The normalization method: 'min-max', 'z-score', 'robust', or 'none'.
+    feature_range : tuple, default=(0, 1)
+        Range for the normalized data for min-max scaling.
+        
+    Returns:
+    --------
+    numpy.ndarray
+        Normalized data.
+    dict
+        Parameters used for normalization.
+    """
+    if method == 'none':
+        return data, {'method': 'none'}
+    
+    if method == 'min-max':
+        # Min-max normalization
+        min_vals = np.min(data, axis=0)
+        max_vals = np.max(data, axis=0)
+        range_vals = max_vals - min_vals
+        # Avoid division by zero
+        range_vals[range_vals == 0] = 1.0
+        
+        normalized_data = (data - min_vals) / range_vals
+        
+        # Scale to the desired feature range
+        a, b = feature_range
+        normalized_data = a + normalized_data * (b - a)
+        
+        params = {
+            'method': 'min-max',
+            'min_vals': min_vals,
+            'max_vals': max_vals,
+            'feature_range': feature_range
+        }
+        
+    elif method == 'z-score':
+        # Z-score normalization
+        mean_vals = np.mean(data, axis=0)
+        std_vals = np.std(data, axis=0)
+        # Avoid division by zero
+        std_vals[std_vals == 0] = 1.0
+        
+        normalized_data = (data - mean_vals) / std_vals
+        
+        params = {
+            'method': 'z-score',
+            'mean_vals': mean_vals,
+            'std_vals': std_vals
+        }
+    elif method == 'robust':
+        # Robust scaling (less sensitive to outliers)
+        scaler = RobustScaler()
+        normalized_data = scaler.fit_transform(data)
+        params = {
+            'method': 'robust',
+            'scaler': scaler
+        }
+    else:
+        raise ValueError(f"Unknown normalization method: {method}")
+    
+    return normalized_data, params
+
+
+def inverse_normalize_data(normalized_data, params):
+    """
+    Reverse the normalization applied by normalize_data.
+    
+    Parameters:
+    -----------
+    normalized_data : numpy.ndarray
+        The normalized data to inverse transform.
+    params : dict
+        The parameters dictionary returned by normalize_data.
+        
+    Returns:
+    --------
+    numpy.ndarray
+        The original data (before normalization).
+    """
+    method = params.get('method', 'none')
+    
+    if method == 'none':
+        return normalized_data
+    
+    elif method == 'min-max':
+        min_vals = params['min_vals']
+        max_vals = params['max_vals']
+        a, b = params['feature_range']
+        
+        # Rescale from [a,b] to [0,1]
+        data_01 = (normalized_data - a) / (b - a)
+        
+        # Rescale from [0,1] to original range
+        original_data = min_vals + data_01 * (max_vals - min_vals)
+        
+    elif method == 'z-score':
+        mean_vals = params['mean_vals']
+        std_vals = params['std_vals']
+        
+        # Reverse z-score normalization
+        original_data = normalized_data * std_vals + mean_vals
+        
+    elif method == 'robust':
+        # Use the scaler's inverse_transform method
+        scaler = params['scaler']
+        original_data = scaler.inverse_transform(normalized_data)
+        
+    else:
+        raise ValueError(f"Unknown normalization method: {method}")
+    
+    return original_data

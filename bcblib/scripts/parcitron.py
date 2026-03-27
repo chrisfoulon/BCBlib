@@ -129,7 +129,6 @@ def determine_parcels(total_points, num_parcels=None, parcel_size=None, strategy
     return parcel_sizes
 
 
-
 def create_coverage_mask(image_path_list):
     """
     Create a combined coverage mask from a list of NIfTI image paths.
@@ -194,7 +193,8 @@ def create_parcel_set(coverage_mask, parcel_sizes=None, num_parcels=None, output
     elif isinstance(parcel_sizes, Sequence):
         sizes = parcel_sizes
         if sum(sizes) > len(mask_coord):
-            raise ValueError("The sum of custom sizes exceeds the number of voxels in the mask.")
+            raise ValueError(f'The sum of the parcel sizes ({sum(sizes)}) is greater than the number of points '
+                             f'in the mask ({len(mask_coord)}).')
     elif num_parcels is not None:
         sizes = determine_parcels(len(mask_coord), num_parcels=num_parcels, strategy=strategy)
     else:
@@ -385,23 +385,23 @@ def main():
         coverage_mask = nib.load(args.mask)
     else:
         if args.input_path is not None:
-            les_list = [os.path.join(args.input_path, f) for f in os.listdir(args.input_path)]
+            input_masks_list = [os.path.join(args.input_path, f) for f in os.listdir(args.input_path)]
         else:
             if not os.path.exists(args.input_list):
                 raise ValueError(args.input_list + ' does not exist.')
             if args.input_list.endswith('.csv'):
                 with open(args.input_list, 'r') as csv_file:
-                    les_list = []
+                    input_masks_list = []
                     for row in csv.reader(csv_file):
                         if len(row) > 1:
-                            les_list += [r for r in row]
+                            input_masks_list += [r for r in row]
                         else:
-                            les_list.append(row[0])
+                            input_masks_list.append(row[0])
             else:
                 # default delimiter is ' ', it might need to be changed
-                les_list = np.loadtxt(args.input_list, dtype=str, delimiter=' ')
-        les_list = [os.path.abspath(f) for f in les_list if is_nifti(f)]
-        coverage_mask = create_coverage_mask(les_list)
+                input_masks_list = np.loadtxt(args.input_list, dtype=str, delimiter=' ')
+        input_masks_list = [os.path.abspath(f) for f in input_masks_list if is_nifti(f)]
+        coverage_mask = create_coverage_mask(input_masks_list)
         nib.save(coverage_mask, os.path.join(args.output, 'coverage_mask.nii.gz'))
     thr = args.smoothing_threshold
     # match +-10% size random in the pool

@@ -21,3 +21,5 @@ pip-wheel-metadata
 .DS_Store*
 # OS generated 
 .directory
+__pycache__/
+*.pyc
