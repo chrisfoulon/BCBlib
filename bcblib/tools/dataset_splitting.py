@@ -54,6 +54,120 @@ def _score_split(folds, covariates):
     return min_p
 
 
+def _descriptive_stats(values):
+    """Compute descriptive statistics for a 1-D array.
+
+    Parameters
+    ----------
+    values : array-like
+
+    Returns
+    -------
+    dict with keys mean, std, min, max, median (all float)
+    """
+    arr = np.asarray(values, dtype=float)
+    return {
+        'mean': float(np.mean(arr)),
+        'std': float(np.std(arr)),
+        'min': float(np.min(arr)),
+        'max': float(np.max(arr)),
+        'median': float(np.median(arr)),
+    }
+
+
+def _build_report(
+    best_folds,
+    best_score,
+    groups,
+    covariates,
+    group_indices,
+    convergence,
+    n_splits,
+    n_permutations,
+    seed,
+):
+    """Build the full report dict for the best split found.
+
+    Parameters
+    ----------
+    best_folds : list of list of int
+    best_score : float
+    groups : np.ndarray
+    covariates : dict[str, array-like]
+    group_indices : dict
+    convergence : list of dict
+        Each entry: {'permutation': int, 'score': float}
+    n_splits, n_permutations, seed : int
+
+    Returns
+    -------
+    dict
+    """
+    # Dataset-level stats
+    dataset_groups = {
+        str(label): {'n': len(idxs)}
+        for label, idxs in group_indices.items()
+    }
+    dataset_covariates = {
+        key: _descriptive_stats(vals)
+        for key, vals in covariates.items()
+    }
+
+    # Per-covariate KW stats for the best split
+    kw_stats = {}
+    for key, vals in covariates.items():
+        arr = np.asarray(vals)
+        fold_groups = [arr[fold] for fold in best_folds if len(fold) > 0]
+        if len(fold_groups) >= 2:
+            H, p = kruskal(*fold_groups)
+            kw_stats[key] = {'H': float(H), 'p': float(p)}
+        else:
+            kw_stats[key] = {'H': None, 'p': None}
+
+    # Per-fold stats
+    folds_report = []
+    for i, fold in enumerate(best_folds):
+        fold_arr = np.asarray(fold)
+        fold_group_counts = {
+            str(label): int(np.sum(groups[fold_arr] == label))
+            for label in group_indices
+        }
+        fold_covariates = {
+            key: _descriptive_stats(np.asarray(vals)[fold_arr])
+            for key, vals in covariates.items()
+        }
+        folds_report.append({
+            'fold': i,
+            'n_subjects': len(fold),
+            'groups': fold_group_counts,
+            'covariates': fold_covariates,
+        })
+
+    best_found_at = convergence[-1]['permutation'] if convergence else 0
+
+    return {
+        'parameters': {
+            'n_splits': n_splits,
+            'n_permutations': n_permutations,
+            'seed': seed,
+        },
+        'dataset': {
+            'n_subjects': int(len(groups)),
+            'groups': dataset_groups,
+            'covariates': dataset_covariates,
+        },
+        'search': {
+            'best_score': best_score,
+            'best_found_at_permutation': best_found_at,
+            'convergence': convergence,
+        },
+        'best_split': {
+            'kruskal_wallis': kw_stats,
+            'folds': folds_report,
+        },
+    }
+
+
 def permutation_balanced_splits(
     groups,
     covariates,
@@ -114,6 +228,18 @@ def permutation_balanced_splits(
     best_score : float
         The minimax KW p-value of the best split. Higher = better balanced.
         Not interpretable as a probability; used as a selection criterion only.
+    report : dict
+        Full report of the search and best split. Keys:
+
+        - ``parameters``: n_splits, n_permutations, seed
+        - ``dataset``: n_subjects, per-group counts, per-covariate descriptive
+          stats (mean, std, min, max, median) for the whole dataset
+        - ``search``: best_score, permutation at which it was found, and
+          convergence history (list of improvements only — each entry is
+          ``{'permutation': int, 'score': float}``)
+        - ``best_split``: per-covariate Kruskal-Wallis results (H, p) and
+          per-fold breakdown (n_subjects, group counts, per-covariate
+          descriptive stats)
 
     Raises
     ------
@@ -171,18 +297,34 @@ def permutation_balanced_splits(
     rng = np.random.default_rng(seed)
     best_folds = None
     best_score = -1.0
+    convergence = []
 
-    for _ in tqdm(range(n_permutations), desc="Permutation search"):
-        folds = [[] for _ in range(n_splits)]
-        for idxs in group_indices.values():
-            shuffled = list(idxs)
-            rng.shuffle(shuffled)
-            for i, idx in enumerate(shuffled):
-                folds[i % n_splits].append(idx)
+    with tqdm(range(n_permutations), desc="Permutation search") as pbar:
+        for perm in pbar:
+            folds = [[] for _ in range(n_splits)]
+            for idxs in group_indices.values():
+                shuffled = list(idxs)
+                rng.shuffle(shuffled)
+                for i, idx in enumerate(shuffled):
+                    folds[i % n_splits].append(idx)
 
-        score = _score_split(folds, covariates)
-        if score > best_score:
-            best_score = score
-            best_folds = [list(fold) for fold in folds]
+            score = _score_split(folds, covariates)
+            if score > best_score:
+                best_score = score
+                best_folds = [list(fold) for fold in folds]
+                convergence.append({'permutation': perm, 'score': best_score})
+                pbar.set_postfix(best=f'{best_score:.4f}',
+                                 improved=len(convergence))
 
-    return best_folds, best_score
+    report = _build_report(
+        best_folds, best_score, groups, covariates,
+        group_indices, convergence, n_splits, n_permutations, seed,
+    )
+    logger.info(
+        "Best split: score=%.4f found at permutation %d/%d (%d improvements)",
+        best_score,
+        convergence[-1]['permutation'] if convergence else 0,
+        n_permutations,
+        len(convergence),
+    )
+    return best_folds, best_score, report

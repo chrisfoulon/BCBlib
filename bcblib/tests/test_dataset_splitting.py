@@ -46,7 +46,7 @@ def _make_subjects(n_per_group, rng=None):
 class TestOutputStructure:
     def test_output_structure(self):
         groups, covariates = _make_subjects(15)
-        folds, score = permutation_balanced_splits(
+        folds, score, report = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=20, seed=0
         )
         assert len(folds) == 5
@@ -64,7 +64,7 @@ class TestCountBalance:
     def test_count_balance(self):
         n_per_group = 13  # intentionally not divisible by n_splits=5
         groups, covariates = _make_subjects(n_per_group)
-        folds, _ = permutation_balanced_splits(
+        folds, _, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=10, seed=0
         )
         for g in [0, 1]:
@@ -84,7 +84,7 @@ class TestCovariateBalance:
         rng = np.random.default_rng(99)
         groups, covariates = _make_subjects(25, rng=rng)
 
-        _, best_score = permutation_balanced_splits(
+        _, best_score, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=500, seed=42
         )
 
@@ -106,10 +106,10 @@ class TestCovariateBalance:
 class TestReproducibility:
     def test_reproducibility(self):
         groups, covariates = _make_subjects(15)
-        folds_a, score_a = permutation_balanced_splits(
+        folds_a, score_a, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=50, seed=7
         )
-        folds_b, score_b = permutation_balanced_splits(
+        folds_b, score_b, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=50, seed=7
         )
         assert folds_a == folds_b
@@ -117,10 +117,10 @@ class TestReproducibility:
 
     def test_different_seeds(self):
         groups, covariates = _make_subjects(20)
-        folds_a, _ = permutation_balanced_splits(
+        folds_a, _, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=50, seed=1
         )
-        folds_b, _ = permutation_balanced_splits(
+        folds_b, _, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=50, seed=2
         )
         assert folds_a != folds_b
@@ -134,7 +134,7 @@ class TestCovariates:
     def test_single_covariate(self):
         groups, covariates = _make_subjects(15)
         single = {'vol_a': covariates['vol_a']}
-        folds, score = permutation_balanced_splits(
+        folds, score, _ = permutation_balanced_splits(
             groups, single, n_splits=5, n_permutations=20, seed=0
         )
         assert len(folds) == 5
@@ -142,7 +142,7 @@ class TestCovariates:
 
     def test_multiple_covariates(self):
         groups, covariates = _make_subjects(15)
-        folds, score = permutation_balanced_splits(
+        folds, score, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=20, seed=0
         )
         assert len(folds) == 5
@@ -163,7 +163,7 @@ class TestScoring:
 
     def test_score_range(self):
         groups, covariates = _make_subjects(15)
-        folds, score = permutation_balanced_splits(
+        folds, score, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=20, seed=0
         )
         assert 0.0 <= score <= 1.0
@@ -190,8 +190,61 @@ class TestValidation:
         groups = np.array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1])  # group 0 has 3 < 5
         covariates = {'vol': np.arange(10, dtype=float)}
         # Should not raise
-        folds, score = permutation_balanced_splits(
+        folds, score, _ = permutation_balanced_splits(
             groups, covariates, n_splits=5, n_permutations=10, seed=0,
             strict=False
         )
         assert len(folds) == 5
+
+
+# ---------------------------------------------------------------------------
+# TestReport
+# ---------------------------------------------------------------------------
+
+class TestReport:
+    def test_report_structure(self):
+        groups, covariates = _make_subjects(15)
+        _, score, report = permutation_balanced_splits(
+            groups, covariates, n_splits=5, n_permutations=50, seed=0
+        )
+        # Top-level keys
+        assert set(report) == {'parameters', 'dataset', 'search', 'best_split'}
+
+        # Parameters
+        p = report['parameters']
+        assert p['n_splits'] == 5
+        assert p['n_permutations'] == 50
+        assert p['seed'] == 0
+
+        # Dataset
+        d = report['dataset']
+        assert d['n_subjects'] == 30
+        assert set(d['groups']) == {'0', '1'}
+        assert d['groups']['0']['n'] == 15
+        for stats in d['covariates'].values():
+            assert set(stats) == {'mean', 'std', 'min', 'max', 'median'}
+
+        # Search
+        s = report['search']
+        assert s['best_score'] == score
+        assert isinstance(s['convergence'], list)
+        assert len(s['convergence']) >= 1
+        first = s['convergence'][0]
+        assert set(first) == {'permutation', 'score'}
+        # Convergence scores must be strictly increasing
+        scores = [e['score'] for e in s['convergence']]
+        assert scores == sorted(scores)
+
+        # Best split
+        bs = report['best_split']
+        assert set(bs['kruskal_wallis']) == set(covariates)
+        for kw in bs['kruskal_wallis'].values():
+            assert set(kw) == {'H', 'p'}
+        assert len(bs['folds']) == 5
+        for fold_report in bs['folds']:
+            assert 'fold' in fold_report
+            assert 'n_subjects' in fold_report
+            assert 'groups' in fold_report
+            assert set(fold_report['covariates']) == set(covariates)
+            for stats in fold_report['covariates'].values():
+                assert set(stats) == {'mean', 'std', 'min', 'max', 'median'}

@@ -12,7 +12,9 @@ Usage:
 """
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -87,7 +89,7 @@ def main():
         col: df[col].to_numpy(dtype=float) for col in args.covariate_cols
     }
 
-    fold_indices, score = permutation_balanced_splits(
+    fold_indices, score, report = permutation_balanced_splits(
         groups=groups,
         covariates=covariates,
         n_splits=args.n_splits,
@@ -104,8 +106,17 @@ def main():
     df['fold'] = fold_col
     df.to_csv(args.output, index=False)
 
+    report_path = Path(args.output).with_suffix('').as_posix() + '_report.json'
+    with open(report_path, 'w') as f:
+        json.dump(report, f, indent=2)
+
+    n_improved = len(report['search']['convergence'])
+    best_at = report['search']['best_found_at_permutation']
     print(f"Best split score (minimax KW p-value): {score:.6f}")
-    print(f"Output written to: {args.output}")
+    print(f"  Best found at permutation {best_at}/{args.n_permutations} "
+          f"({n_improved} improvements)")
+    print(f"Output CSV:    {args.output}")
+    print(f"Report JSON:   {report_path}")
 
 
 if __name__ == "__main__":
