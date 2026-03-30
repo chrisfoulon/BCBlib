@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import os
-import errno
 import numpy as np
 
 import nibabel as nib
@@ -41,18 +40,11 @@ def split_clusters(nii, res_folder, name):
         folder
     """
     # extract the needed informations from the source image
-    data = nii.get_data()
+    data = nii.get_fdata()
     affine = nii.affine
 
     folder = os.path.join(res_folder, name)
-    # Try to create the folder and ignore the error in the case it alread exists
-    try:
-        os.mkdir(folder)
-    # note that all the other errors like permissions error will be caught
-    except OSError as exc:
-        if exc.errno != errno.EEXIST:
-            raise
-        pass
+    os.makedirs(folder, exist_ok=True)
     # TODO change the amax for a walk through an array of the unique values
     # find the maximum value of the source
     o_max = np.amax(data)
@@ -66,7 +58,7 @@ def split_clusters(nii, res_folder, name):
         # save the cluster in mask with its original value
         mask[np.where(data == o_max)] = o_max
         # we remove the cluster from data
-        data[np.where(data == o_max)]  = 0
+        data[np.where(data == o_max)] = 0
         # we save the mask
         img_ROIs = nib.Nifti1Image(mask, affine)
         path = os.path.join(
