@@ -12,6 +12,7 @@ setup(
     # data_files=[('priors', ['../Data/ants_priors/brainPrior.nii.gz'])],
     keywords='brain neuroimaging nifti cellular-automata bcbtoolkit bcblab parcellation null-models',
     long_description=read('README.rst'),
+    long_description_content_type='text/x-rst',
     zip_safe=True,
     include_package_data=True,
     packages=find_packages(exclude=['__pycache__']),
