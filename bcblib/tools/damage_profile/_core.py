@@ -12,7 +12,7 @@ from bcblib.imaging._types import NiftiLike
 from bcblib.imaging.io import load_nifti, is_nifti
 from bcblib.tools.damage_profile._atlas import AtlasSpec, load_atlas
 from bcblib.tools.damage_profile._space import check_and_resample
-from bcblib.tools.damage_profile._stats import compute_region_stats
+from bcblib.tools.damage_profile._stats import compute_region_stats, compute_subject_stats
 
 
 def _load_atlas_reference(spec: AtlasSpec) -> Optional[nib.Nifti1Image]:
@@ -96,12 +96,15 @@ def damage_profile(
         for same-family space mismatches.
     output_dir : path-like, optional
         If provided, one CSV per atlas is written as
-        ``<atlas_name>_damage_profile.csv``.
+        ``<atlas_name>_damage_profile.csv`` and a ``subject_map_stats.csv``
+        containing descriptive statistics for the subject map is also written.
 
     Returns
     -------
     dict[str, pd.DataFrame]
-        Keyed by ``AtlasSpec.name``; values from ``compute_region_stats``.
+        Keyed by ``AtlasSpec.name`` for per-region overlap results, plus the
+        reserved key ``'_subject_map_stats'`` for the subject descriptive stats
+        (see :func:`compute_subject_stats`).
     """
     subject_img = load_nifti(subject_map)
     subject_data = subject_img.get_fdata()
@@ -111,6 +114,11 @@ def damage_profile(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     results: Dict[str, pd.DataFrame] = {}
+
+    subject_stats = compute_subject_stats(subject_img)
+    results["_subject_map_stats"] = subject_stats
+    if output_dir is not None:
+        subject_stats.to_csv(output_dir / "subject_map_stats.csv", index=False)
 
     for spec in atlases:
         atlas_ref = _load_atlas_reference(spec)

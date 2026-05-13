@@ -234,6 +234,97 @@ class TestRegionStats:
 
 
 # ---------------------------------------------------------------------------
+# Subject map descriptive stats
+# ---------------------------------------------------------------------------
+
+class TestSubjectStats:
+
+    def _make_img(self, data, affine=None):
+        if affine is None:
+            affine = np.eye(4)
+        return nib.Nifti1Image(data.astype(np.float32), affine)
+
+    def test_columns_present(self):
+        from bcblib.tools.damage_profile._stats import compute_subject_stats
+        data = np.zeros((5, 5, 5), dtype=np.float32)
+        data[0, 0, 0] = 1.0
+        df = compute_subject_stats(self._make_img(data))
+        expected = [
+            "n_nonzero_voxels", "voxel_volume_mm3", "map_volume_mm3",
+            "map_sum", "map_mean_nonzero", "map_min_nonzero", "map_max",
+            "map_p50_nonzero", "map_p90_nonzero", "map_p95_nonzero",
+        ]
+        assert list(df.columns) == expected
+        assert len(df) == 1
+
+    def test_binary_lesion_known_values(self):
+        from bcblib.tools.damage_profile._stats import compute_subject_stats
+        data = np.zeros((5, 5, 5), dtype=np.float32)
+        data[0, 0, 0] = 1.0
+        data[1, 1, 1] = 1.0
+        data[2, 2, 2] = 1.0
+        df = compute_subject_stats(self._make_img(data))
+        assert df.iloc[0]["n_nonzero_voxels"] == 3
+        assert pytest.approx(df.iloc[0]["map_volume_mm3"]) == 3.0  # 1mm³ voxels
+        assert pytest.approx(df.iloc[0]["map_sum"]) == 3.0
+        assert pytest.approx(df.iloc[0]["map_mean_nonzero"]) == 1.0
+        assert pytest.approx(df.iloc[0]["map_min_nonzero"]) == 1.0
+        assert pytest.approx(df.iloc[0]["map_max"]) == 1.0
+
+    def test_probabilistic_map_mean_nonzero(self):
+        from bcblib.tools.damage_profile._stats import compute_subject_stats
+        data = np.zeros((5, 5, 5), dtype=np.float32)
+        data[0, 0, 0] = 0.2
+        data[1, 1, 1] = 0.8
+        df = compute_subject_stats(self._make_img(data))
+        assert df.iloc[0]["n_nonzero_voxels"] == 2
+        assert pytest.approx(df.iloc[0]["map_mean_nonzero"]) == 0.5
+        assert pytest.approx(df.iloc[0]["map_min_nonzero"]) == 0.2
+        assert pytest.approx(df.iloc[0]["map_max"]) == 0.8
+
+    def test_voxel_volume_from_affine(self):
+        from bcblib.tools.damage_profile._stats import compute_subject_stats
+        affine = np.diag([2.0, 2.0, 2.0, 1.0])  # 2mm isotropic = 8mm³ voxels
+        data = np.ones((5, 5, 5), dtype=np.float32)
+        df = compute_subject_stats(self._make_img(data, affine))
+        assert pytest.approx(df.iloc[0]["voxel_volume_mm3"]) == 8.0
+        assert pytest.approx(df.iloc[0]["map_volume_mm3"]) == 5 * 5 * 5 * 8.0
+
+    def test_empty_map_returns_nan_stats(self):
+        from bcblib.tools.damage_profile._stats import compute_subject_stats
+        data = np.zeros((5, 5, 5), dtype=np.float32)
+        df = compute_subject_stats(self._make_img(data))
+        assert df.iloc[0]["n_nonzero_voxels"] == 0
+        assert df.iloc[0]["map_volume_mm3"] == 0.0
+        assert np.isnan(df.iloc[0]["map_mean_nonzero"])
+
+    def test_subject_stats_in_damage_profile_results(self, tmp_path):
+        from bcblib.tools.damage_profile import damage_profile, AtlasSpec
+        atlas_dir = tmp_path / "atlas"
+        atlas_dir.mkdir()
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[0, 0, 0] = 1.0
+        _save_nifti(atlas_dir / "r.nii.gz", arr)
+        subj = nib.Nifti1Image(np.ones((5, 5, 5), dtype=np.float32), np.eye(4))
+        spec = AtlasSpec(source=str(atlas_dir), name="a")
+        results = damage_profile(subj, [spec])
+        assert "_subject_map_stats" in results
+        assert isinstance(results["_subject_map_stats"], pd.DataFrame)
+
+    def test_subject_stats_csv_written(self, tmp_path):
+        from bcblib.tools.damage_profile import damage_profile, AtlasSpec
+        atlas_dir = tmp_path / "atlas"
+        atlas_dir.mkdir()
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[0, 0, 0] = 1.0
+        _save_nifti(atlas_dir / "r.nii.gz", arr)
+        subj = nib.Nifti1Image(np.ones((5, 5, 5), dtype=np.float32), np.eye(4))
+        spec = AtlasSpec(source=str(atlas_dir), name="a")
+        damage_profile(subj, [spec], output_dir=tmp_path / "out")
+        assert (tmp_path / "out" / "subject_map_stats.csv").exists()
+
+
+# ---------------------------------------------------------------------------
 # T5.0 — New imaging.stats functions
 # ---------------------------------------------------------------------------
 
@@ -460,7 +551,7 @@ class TestDamageProfile:
             [AtlasSpec(source=str(d1), name="a1"),
              AtlasSpec(source=str(d2), name="a2")],
         )
-        assert set(results.keys()) == {"a1", "a2"}
+        assert {"a1", "a2"}.issubset(results.keys())
 
     def test_empty_result_when_no_overlap(self, tmp_path):
         from bcblib.tools.damage_profile import damage_profile, AtlasSpec

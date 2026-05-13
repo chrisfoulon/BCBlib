@@ -243,7 +243,12 @@ def main(argv=None):
         output_dir=output_dir,
     )
 
+    stats_out = Path(output_dir) / "subject_map_stats.csv"
+    print(f"  subject stats → {stats_out}")
+
     for name, df in results.items():
+        if name == "_subject_map_stats":
+            continue
         out = Path(output_dir) / f"{name}_damage_profile.csv"
         print(f"  {name}: {len(df)} regions → {out}")
 

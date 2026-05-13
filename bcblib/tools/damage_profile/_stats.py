@@ -1,7 +1,8 @@
-"""Per-region overlap statistics."""
+"""Per-region overlap statistics and subject map descriptive stats."""
 
 from typing import Dict
 
+import nibabel as nib
 import numpy as np
 import pandas as pd
 
@@ -72,3 +73,65 @@ def compute_region_stats(
         .sort_values("mean_overlap", ascending=False)
         .reset_index(drop=True)
     )
+
+
+def compute_subject_stats(subject_img: nib.Nifti1Image) -> pd.DataFrame:
+    """Compute descriptive statistics for the subject map itself.
+
+    Intended to be saved alongside the per-region overlap results so that
+    users can normalise overlap metrics by lesion volume or disconnectome
+    integral at analysis time.
+
+    Parameters
+    ----------
+    subject_img : Nifti1Image
+        The loaded subject lesion or disconnectome map.
+
+    Returns
+    -------
+    pd.DataFrame
+        Single-row DataFrame with columns:
+
+        - ``n_nonzero_voxels`` — number of voxels with value > 0
+        - ``voxel_volume_mm3`` — volume of one voxel (from the affine)
+        - ``map_volume_mm3`` — ``n_nonzero_voxels × voxel_volume_mm3``
+        - ``map_sum`` — sum of all voxel values (disconnectome integral)
+        - ``map_mean_nonzero`` — mean over non-zero voxels
+        - ``map_min_nonzero`` — minimum non-zero value
+        - ``map_max`` — maximum value
+        - ``map_p50_nonzero`` — median over non-zero voxels
+        - ``map_p90_nonzero`` — 90th percentile over non-zero voxels
+        - ``map_p95_nonzero`` — 95th percentile over non-zero voxels
+    """
+    data = subject_img.get_fdata()
+    voxel_volume = float(np.abs(np.linalg.det(subject_img.affine[:3, :3])))
+
+    nonzero = data[data > 0]
+    n_nonzero = int(nonzero.size)
+
+    if n_nonzero == 0:
+        return pd.DataFrame([{
+            "n_nonzero_voxels": 0,
+            "voxel_volume_mm3": voxel_volume,
+            "map_volume_mm3": 0.0,
+            "map_sum": 0.0,
+            "map_mean_nonzero": float("nan"),
+            "map_min_nonzero": float("nan"),
+            "map_max": 0.0,
+            "map_p50_nonzero": float("nan"),
+            "map_p90_nonzero": float("nan"),
+            "map_p95_nonzero": float("nan"),
+        }])
+
+    return pd.DataFrame([{
+        "n_nonzero_voxels": n_nonzero,
+        "voxel_volume_mm3": voxel_volume,
+        "map_volume_mm3": n_nonzero * voxel_volume,
+        "map_sum": float(data.sum()),
+        "map_mean_nonzero": float(nonzero.mean()),
+        "map_min_nonzero": float(nonzero.min()),
+        "map_max": float(data.max()),
+        "map_p50_nonzero": float(np.percentile(nonzero, 50)),
+        "map_p90_nonzero": float(np.percentile(nonzero, 90)),
+        "map_p95_nonzero": float(np.percentile(nonzero, 95)),
+    }])
