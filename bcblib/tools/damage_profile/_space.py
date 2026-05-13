@@ -3,7 +3,9 @@
 import numpy as np
 import nibabel as nib
 import templateflow.api as tflow
-import nitransforms.nonlinear as nitnl
+from nitransforms.io.itk import ITKCompositeH5
+from nitransforms.nonlinear import DenseFieldTransform
+import nitransforms.resampling as ntres
 
 from bcblib.tools.best_overlap import _check_image_space
 
@@ -59,16 +61,20 @@ def _apply_templateflow_warp(
             f"TemplateFlow has no warp from {source_space} to {target_space}. "
             f"Check that the templateflow data cache is populated."
         )
-    warp_path = warp_files if isinstance(warp_files, (str,)) else str(warp_files)
+    warp_path = warp_files if isinstance(warp_files, str) else str(warp_files)
 
     target_ref = tflow.get(target_space, resolution=1, desc="brain", suffix="T1w")
     if not target_ref:
         target_ref = tflow.get(target_space, resolution=1, suffix="T1w")
-    ref_img = nib.load(str(target_ref) if not isinstance(target_ref, str) else target_ref)
+    ref_img = nib.load(str(target_ref))
 
-    xfm = nitnl.load(warp_path, fmt="itk")
-    resampled_data = xfm.apply(atlas_img, reference=ref_img, order=0).get_fdata()
-    return nib.Nifti1Image(resampled_data.astype(np.float32), ref_img.affine)
+    # TemplateFlow H5 files are ITK composite transforms (affine + displacement
+    # field).  ITKCompositeH5.from_filename returns a list; element [1] is the
+    # displacement field as a Nifti1Image.  We apply it via the current API.
+    composite = ITKCompositeH5.from_filename(warp_path)
+    disp_xfm = DenseFieldTransform(composite[1])
+    resampled = ntres.apply(disp_xfm, atlas_img, reference=ref_img, order=0)
+    return nib.Nifti1Image(resampled.get_fdata().astype(np.float32), ref_img.affine)
 
 
 def check_and_resample(
