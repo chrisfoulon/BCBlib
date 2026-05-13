@@ -188,7 +188,7 @@ without a lazy-import guard.
 - [x] T10.2: flake8 clean on all new files
 - [x] T10.3: `templateflow` and `nitransforms` added to `install_requires` in `setup.py`
 - [x] T10.4: README updated — `bcb-damage-profile` row in CLI table + two usage examples + dependency note
-- [ ] T10.5: Commit on `feat/best-overlap-robust-stats` branch (current working branch)
+- [x] T10.5: Commit on `feat/best-overlap-robust-stats` branch (current working branch)
 
 ---
 
