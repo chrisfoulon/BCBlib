@@ -36,6 +36,8 @@ from bcblib.imaging.stats import (
     percentile,
     robust_range,
     histogram,
+    fraction_covered,
+    weighted_region_mean,
 )
 
 # -- manipulate -----------------------------------------------------------
@@ -88,6 +90,8 @@ __all__ = [
     "percentile",
     "robust_range",
     "histogram",
+    "fraction_covered",
+    "weighted_region_mean",
     # manipulate
     "extract_roi",
     "merge_images",

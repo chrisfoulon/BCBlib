@@ -1,6 +1,5 @@
 """NIfTI statistical utilities: summary stats, centre of gravity, histograms."""
 
-import os
 from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
@@ -271,3 +270,103 @@ def histogram(
         data = data.ravel()
     data = data[~np.isnan(data)]
     return np.histogram(data, bins=bins)
+
+
+# ---------------------------------------------------------------------------
+# Layered overlap stats (array cores + NiftiLike wrappers)
+# ---------------------------------------------------------------------------
+
+def _fraction_covered_array(
+    subject_data: np.ndarray,
+    mask_data: np.ndarray,
+) -> float:
+    """Fraction of *mask_data* voxels that are non-zero in *subject_data*.
+
+    Parameters
+    ----------
+    subject_data : np.ndarray
+    mask_data : np.ndarray
+        Boolean or float array; non-zero elements define the region.
+
+    Returns
+    -------
+    float
+        0.0 if the mask is empty.
+    """
+    mask = mask_data.astype(bool)
+    n_total = int(mask.sum())
+    if n_total == 0:
+        return 0.0
+    return float((subject_data[mask] > 0).sum()) / n_total
+
+
+def fraction_covered(
+    subject: NiftiLike,
+    mask: NiftiLike,
+) -> float:
+    """Fraction of *mask* voxels that are non-zero in *subject*.
+
+    Parameters
+    ----------
+    subject : NiftiLike
+    mask : NiftiLike
+
+    Returns
+    -------
+    float
+    """
+    return _fraction_covered_array(
+        load_nifti(subject).get_fdata(),
+        load_nifti(mask).get_fdata(),
+    )
+
+
+def _weighted_region_mean_array(
+    subject_data: np.ndarray,
+    weight_data: np.ndarray,
+) -> float:
+    """Weighted mean of *subject_data* values within *weight_data* > 0.
+
+    ``sum(subject[v] * weight[v]) / sum(weight[v])`` for all voxels v
+    where weight[v] > 0.
+
+    Parameters
+    ----------
+    subject_data : np.ndarray
+    weight_data : np.ndarray
+        Non-negative weights; uniform weights give the same result as the
+        unweighted mean.
+
+    Returns
+    -------
+    float
+        ``nan`` when the total weight is zero (empty region or all-zero weights).
+    """
+    mask = weight_data > 0
+    w = weight_data[mask]
+    w_sum = float(w.sum())
+    if w_sum == 0.0:
+        return float("nan")
+    return float((subject_data[mask] * w).sum() / w_sum)
+
+
+def weighted_region_mean(
+    subject: NiftiLike,
+    weight_map: NiftiLike,
+) -> float:
+    """Weighted mean of *subject* intensities using *weight_map* as weights.
+
+    Parameters
+    ----------
+    subject : NiftiLike
+    weight_map : NiftiLike
+
+    Returns
+    -------
+    float
+        ``nan`` when total weight is zero.
+    """
+    return _weighted_region_mean_array(
+        load_nifti(subject).get_fdata(),
+        load_nifti(weight_map).get_fdata(),
+    )

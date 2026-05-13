@@ -122,6 +122,7 @@ z-score normalisation, rank transform.
 | `bcb-split` | `bcb-split 4d.nii.gz -o out/` | Split a 4-D NIfTI along the volume axis |
 | `bcb-convert` | `bcb-convert brain.nii` | Convert between `.nii` and `.nii.gz` |
 | `bcb-dataset-split` | see below | Balanced dataset splitting from a CSV file |
+| `bcb-damage-profile` | see below | Overlap statistics between a subject map and brain atlases |
 | `randomise_helper` | — | Build FSL randomise design files from a spreadsheet |
 | `pick_up_matched_synth_lesions` | — | Select synthetic lesions matching a size distribution |
 
@@ -133,6 +134,18 @@ bcb-dataset-split \
     --covariate-cols acute_volume chronic_volume \
     --n-splits 5 --n-permutations 50000 --seed 42 \
     --output splits.csv
+
+# Damage profile — overlap between a lesion map and the Rojkova WM atlas
+bcb-damage-profile \
+    --map lesion.nii.gz \
+    --preset rojkova \
+    --output-dir ./results
+
+# Custom atlas directory, explicit threshold
+bcb-damage-profile \
+    --map disconnectome.nii.gz \
+    --atlas /path/to/atlas_dir --name my_atlas --threshold 0.2 \
+    --output-dir ./results
 ```
 
 ## Dependencies
@@ -146,6 +159,7 @@ Core dependencies installed automatically:
 - `pymc >= 5`, `arviz` (required for `best_overlap`)
 - `umap-learn` (required for `umap_utils`)
 - `mne`
+- `templateflow`, `nitransforms` (required for `damage_profile` cross-template resampling)
 
 External tools (not installed by pip):
 

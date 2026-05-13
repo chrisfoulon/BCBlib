@@ -18,7 +18,8 @@ setup(
     packages=find_packages(exclude=['__pycache__']),
     install_requires=['nibabel>=3', 'numpy', 'six', 'scipy', 'nilearn', 'scikit-learn',
                       'tqdm', 'pandas', 'openpyxl', 'umap-learn', 'joblib', 'statsmodels', 'mne',
-                      'pymc>=5', 'arviz', 'matplotlib', 'rich>=10'],
+                      'pymc>=5', 'arviz', 'matplotlib', 'rich>=10',
+                      'templateflow', 'nitransforms'],
     package_data={
         # If any package contains *.txt or *.rst files, include them:
         "": ["*.txt", "*.rst"],
@@ -42,7 +43,8 @@ setup(
                             'bcb-merge = bcblib.scripts.imaging_cli:bcb_merge',
                             'bcb-split = bcblib.scripts.imaging_cli:bcb_split',
                             'bcb-convert = bcblib.scripts.imaging_cli:bcb_convert',
-                            'bcb-dataset-split = bcblib.scripts.run_dataset_splitting:main']
+                            'bcb-dataset-split = bcblib.scripts.run_dataset_splitting:main',
+                            'bcb-damage-profile = bcblib.scripts.run_damage_profile:main']
     },
     project_urls={  # Optional
         'Source': 'https://github.com/chrisfoulon/BCBlib',
