@@ -11,14 +11,70 @@ from nilearn.regions import connected_regions
 from tqdm import tqdm
 import numpy as np
 from scipy.spatial.distance import euclidean
-from scipy.ndimage.measurements import center_of_mass
+from scipy.ndimage import center_of_mass
 
 import nibabel as nib
 
+# Private imports from the new imaging package -- used by functions that
+# STAY in this module so they never emit deprecation warnings themselves.
+from bcblib.imaging.io import (
+    is_nifti as _is_nifti,
+    load_nifti as _load_nifti,
+)
+
+
+# =========================================================================
+# Deprecation shims for functions moved to bcblib.imaging
+# =========================================================================
 
 def is_nifti(filename):
-    return str(filename)[-4:] == '.nii' or str(filename)[-7:] == '.nii.gz'
+    """Deprecated. Use ``bcblib.imaging.io.is_nifti`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.is_nifti is deprecated. "
+        "Use bcblib.imaging.io.is_nifti instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.io import is_nifti as _fn
+    return _fn(filename)
 
+
+def load_nifti(img):
+    """Deprecated. Use ``bcblib.imaging.io.load_nifti`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.load_nifti is deprecated. "
+        "Use bcblib.imaging.io.load_nifti instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.io import load_nifti as _fn
+    return _fn(img)
+
+
+def resave_nifti(nifti, output=None):
+    """Deprecated. Use ``bcblib.imaging.io.resave_nifti`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.resave_nifti is deprecated. "
+        "Use bcblib.imaging.io.resave_nifti instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.io import resave_nifti as _fn
+    return _fn(nifti, output=output)
+
+
+def resave_nifti_list(nifti_list, output_dir=None, save_in_place=False, discard_errors=False):
+    """Deprecated. Use ``bcblib.imaging.io.resave_nifti_list`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.resave_nifti_list is deprecated. "
+        "Use bcblib.imaging.io.resave_nifti_list instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.io import resave_nifti_list as _fn
+    return _fn(nifti_list, output_dir=output_dir, save_in_place=save_in_place,
+               discard_errors=discard_errors)
+
+
+# =========================================================================
+# Functions that STAY in this module (already deprecated or domain-specific)
+# =========================================================================
 
 def file_to_list(file_path, delimiter=' '):
     warnings.warn("bcblib: file_to_list is deprecated and will be removed in a future version",
@@ -40,189 +96,61 @@ def file_to_list(file_path, delimiter=' '):
     return dir_list
 
 
-def load_nifti(img):
-    """
-
-    Parameters
-    ----------
-    img : nibabel.Nifti1Image or str or pathlike object
-        already loaded image or path to a nifti image
-
-    Returns
-    -------
-        nibabel loaded Nifti1Image
-    """
-    if isinstance(img, (str, bytes, os.PathLike)):
-        if Path(img).is_file():
-            img = nib.load(img, mmap=False)
-    if not isinstance(img, nib.Nifti1Image):
-        raise ValueError(
-            'bcblib.tools.load_nifti error: {} must either be a valid path or a nibabel.Nifti1Image'.format(img))
-    return img
-
-
 def get_nifti_orientation(img):
-    img = load_nifti(img)
-    return nib.aff2axcodes(img.affine)
+    """Deprecated. Use ``bcblib.imaging.orient.get_orientation`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.get_nifti_orientation is deprecated. "
+        "Use bcblib.imaging.orient.get_orientation instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.orient import get_orientation
+    return get_orientation(img)
 
 
 def reorient_to_canonical(img, save=False):
-    """
-    WARNING: if save == True, the input image is modified
-    Try to reorient the input images to the canonical RAS+ orientation
-    Parameters
-    ----------
-    img : nibabel.Nifti1Image or path-like object
-    save : bool
-        save the reoriented image in place of the input image
-    Returns
-    -------
-    img : nibabel.Nifti1Image
-        return the loaded reoriented image
-    """
-    img = load_nifti(img)
-    if not img.get_filename():
-        raise ValueError('ERROR: the nifti image is not an already existing file and thus will not be reoriented')
-    else:
-        nii = nib.as_closest_canonical(img)
-        if save:
-            nii.set_filename(img.get_filename())
-            nib.save(nii, img.get_filename())
-    return nii
+    """Deprecated. Use ``bcblib.imaging.orient.reorient_to_standard`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.reorient_to_canonical is deprecated. "
+        "Use bcblib.imaging.orient.reorient_to_standard instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.orient import reorient_to_standard
+    return reorient_to_standard(img, save=save)
 
 
 def reorient_nifti_list(nifti_list, output_dir=None, save_in_place=False, discard_errors=False):
-    """
-    WARNING: the input images may be modified
-    Try to reorient the input images to the canonical RAS+ orientation
-    Parameters
-    ----------
-    nifti_list : list of nibabel.Nifti1Image or list of path-like object
-    output_dir : path-like object
-        optional is save_in_place is True. If given, the reoriented images will be saved in the output directory
-    save_in_place : bool
-        save the reoriented images in place of the input images
-    discard_errors : bool
-        If True : if an image cannot be reoriented because of an error due to corrupted data (preventing nibabel from
-        reading properly) this option will remove it from the list
-        WARNING: the output list might be shorter than the input list
-        if False, in case of such error, the function will raise an error and fail.
-    Returns
-    -------
-    reoriented_list : list of nibabel.Nifti1Image
-    """
-    if (output_dir is None or not Path(output_dir).is_dir()) and not save_in_place:
-        raise Exception('output_dir does not exist or is missing. output_dir MUST be given IF save_in_place is False')
-    reoriented_list = []
-    failed_list = []
-    for nii in tqdm(nifti_list, desc='Reorient Nifti list'):
-        try:
-            nii = load_nifti(nii)
-            img = reorient_to_canonical(nii)
-            if output_dir is not None and Path(output_dir).is_dir():
-                img.set_filename(Path(output_dir, Path(nii.get_filename()).name))
-            if save_in_place:
-                img.set_filename(nii.get_filename())
-            nib.save(img, img.get_filename())
-            reoriented_list.append(img.get_filename())
-        except Exception as e:
-            if isinstance(nii, nib.Nifti1Image):
-                fname = nii.get_filename()
-            else:
-                fname = str(nii)
-            failed_list.append(fname)
-            if discard_errors:
-                print('Error in file {}: {}\n the image will then be discarded from the list'
-                      '\n WARNING: the output list will be shorter than the input list'.format(fname, e))
-            else:
-                raise TypeError('Error in file {}: {}'.format(fname, e))
-    return reoriented_list, failed_list
-
-
-def resave_nifti(nifti, output=None):
-    output_file = None
-    output_dir = None
-    if output is not None:
-        if Path(output).is_dir():
-            output_dir = output
-        else:
-            if Path(output).parent.is_dir():
-                output_dir = Path(output).parent
-                output_file = output
-            else:
-                raise ValueError('{} is not an existing directory'.format(Path(output).parent))
-
-    img = load_nifti(nifti)
-    if not output_dir:
-        output_file = img.get_filename()
-    if output_dir and not output_file:
-        output_file = Path(output_dir, Path(img.get_filename()).name)
-    if not output_dir and not output_file:
-        raise ValueError('The given image does not have a defined filename and no output has been given')
-    nib.save(nib.Nifti1Image(img.get_fdata(), img.affine), output_file)
-    return output_file
-
-
-def resave_nifti_list(nifti_list, output_dir=None, save_in_place=False, discard_errors=False):
-    """
-    WARNING: the input images may be modified
-    Try to reorient the input images to the canonical RAS+ orientation
-    Parameters
-    ----------
-    nifti_list : list of nibabel.Nifti1Image or list of path-like object
-    output_dir : path-like object
-        optional if save_in_place is True. If given, the reoriented images will be saved in the output directory
-    save_in_place : bool
-        save the reoriented images in place of the input images
-    discard_errors : bool
-        If True : if an image cannot be reoriented because of an error due to corrupted data (preventing nibabel from
-        reading properly) this option will remove it from the list
-        WARNING: the output list might be shorter than the input list
-        if False, in case of such error, the function will raise an error and fail.
-    Returns
-    -------
-    reoriented_list : list of nibabel.Nifti1Image
-    """
-    if (output_dir is None or not Path(output_dir).is_dir()) and not save_in_place:
-        raise Exception('output_dir does not exist or is missing. output_dir MUST be given IF save_in_place is False')
-    resaved_list = []
-    failed_list = []
-    for nii in nifti_list:
-        try:
-            fname = resave_nifti(nii, output=output_dir)
-            resaved_list.append(fname)
-        except Exception as e:
-            if isinstance(nii, nib.Nifti1Image):
-                fname = nii.get_filename()
-            else:
-                fname = str(nii)
-            failed_list.append(fname)
-            if discard_errors:
-                print('Error in file {}: {}\n the image will then be discarded from the list'
-                      '\n WARNING: the output list will be shorter than the input list'.format(fname, e))
-            else:
-                raise TypeError('Error in file {}: {}'.format(fname, e))
-    return resaved_list, failed_list
+    """Deprecated. Use ``bcblib.imaging.orient.reorient_list`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.reorient_nifti_list is deprecated. "
+        "Use bcblib.imaging.orient.reorient_list instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.orient import reorient_list
+    return reorient_list(nifti_list, output_dir=output_dir,
+                         save_in_place=save_in_place,
+                         discard_errors=discard_errors)
 
 
 def get_centre_of_mass(nifti, round_coord=False):
-    nii = load_nifti(nifti)
-    if not nii.get_fdata().any():
-        return tuple(np.zeros(len(nii.shape)))
-    if round_coord:
-        return np.round(center_of_mass(np.nan_to_num(np.abs(nii.get_fdata()))))
-    else:
-        return center_of_mass(np.nan_to_num(np.abs(nii.get_fdata())))
+    """Deprecated. Use ``bcblib.imaging.stats.centre_of_gravity`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.get_centre_of_mass is deprecated. "
+        "Use bcblib.imaging.stats.centre_of_gravity instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.stats import centre_of_gravity
+    return centre_of_gravity(nifti, round_coord=round_coord)
 
 
 def centre_of_mass_difference(nifti, reference, round_centres=False):
-    if not (isinstance(reference, list) or isinstance(reference, tuple) or isinstance(reference, set)):
-        reference = get_centre_of_mass(reference, round_centres)
-    nii_centre = get_centre_of_mass(nifti, round_centres)
-    if len(nii_centre) != len(reference):
-        raise ValueError('Nifti image ({}) and reference ({}) must have the same number of dimensions'.format(
-            nii_centre, reference))
-    return euclidean(nii_centre, reference)
+    """Deprecated. Use ``bcblib.imaging.stats.centre_of_gravity_distance`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.centre_of_mass_difference is deprecated. "
+        "Use bcblib.imaging.stats.centre_of_gravity_distance instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.stats import centre_of_gravity_distance
+    return centre_of_gravity_distance(nifti, reference, round_centres=round_centres)
 
 
 def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, round_centres=False):
@@ -237,20 +165,20 @@ def centre_of_mass_difference_list(nifti_list, reference, fname_filter=None, rou
 def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=False, mean_for_std=None):
     if not isinstance(input_images, list):
         if Path(input_images).is_file():
-            input_images = [str(p) for p in file_to_list(input_images) if is_nifti(p)]
+            input_images = [str(p) for p in file_to_list(input_images) if _is_nifti(p)]
         elif Path(input_images).is_dir():
             if recursive:
-                input_images = [str(p) for p in Path(input_images).rglob('*') if is_nifti(p)]
+                input_images = [str(p) for p in Path(input_images).rglob('*') if _is_nifti(p)]
             else:
-                input_images = [str(p) for p in Path(input_images).iterdir() if is_nifti(p)]
+                input_images = [str(p) for p in Path(input_images).iterdir() if _is_nifti(p)]
         else:
             raise ValueError('Wrong input (must be a file/directory path of a list of paths)')
     if mean_for_std is not None and mean:
         raise ValueError('mean_for_std can only be used if mean is False')
     if mean_for_std is not None:
         # if mean_for_std is pathlike, load the image
-        if isinstance(mean_for_std, str) or isinstance(mean_for_std, Path) or is_nifti(mean_for_std):
-            mean_for_std = load_nifti(mean_for_std).get_fdata()
+        if isinstance(mean_for_std, str) or isinstance(mean_for_std, Path) or _is_nifti(mean_for_std):
+            mean_for_std = _load_nifti(mean_for_std).get_fdata()
         elif not isinstance(mean_for_std, np.ndarray):
             raise ValueError('mean_for_std must be a pathlike object, a nifti image or a numpy array')
     if filter_pref:
@@ -269,12 +197,10 @@ def nifti_overlap_images(input_images, filter_pref='', recursive=False, mean=Fal
             if mean:
                 temp_overlap_data = temp_overlap_data + nii.get_fdata()
             if mean_for_std is not None:
-                # imaging_stats['std'][modality] += np.square(current_data - imaging_stats['mean'][modality])
                 temp_overlap_data += np.square(nii.get_fdata() - mean_for_std)
             else:
                 temp_overlap_data += nii.get_fdata()
     if mean_for_std is not None:
-        # imaging_stats['std'][key] = np.sqrt(imaging_stats['std'][key] / counters[key])
         temp_overlap_data = np.sqrt(temp_overlap_data / len(input_images))
     if mean:
         temp_overlap_data = temp_overlap_data / len(input_images)
@@ -327,7 +253,7 @@ def overlaps_subfolders(root_folder, filter_pref='', subfolders_recursive=True,
                                    std_pref + subfolder.name + '.nii.gz')
             if overlap_path.is_file():
                 print(f'Mean image found for [{subfolder.name}], computing std')
-                overlap_nifti = load_nifti(overlap_path)
+                overlap_nifti = _load_nifti(overlap_path)
             else:
                 print(f'Computing mean image for [{subfolder.name}]')
                 overlap_nifti = nifti_overlap_images(subfolder, filter_pref, recursive=subfolders_recursive, mean=True)
@@ -350,75 +276,29 @@ def overlaps_subfolders(root_folder, filter_pref='', subfolders_recursive=True,
 
 
 def binarize_nii(nii: Union[os.PathLike, nib.Nifti1Image], thr: Union[float, int] = None):
-    """
-    Binarize the input image by setting everything >= thr to 1 and everything < thr to 0
-    Parameters
-    ----------
-    nii : Union[os.PathLike, nib.Nifti1Image]
-    thr : Union[float, int]
-
-    Returns
-    -------
-    nib.Nifti1Image
-
-    Note:
-    -------
-    Warning: It is assumed that background intensity is smaller than anything else.
-    Warning 2: if the image only contains one value, it is returned without changed as it is impossible to know
-    whether this is background or foreground
-    """
-    hdr = load_nifti(nii)
-    data = hdr.get_fdata()
-    # The is already binary (or only contain 1 value)
-    unique_val = set(np.unique(data))
-    if len(unique_val) == 1 or unique_val == {0, 1}:
-        return hdr
-    thr_data = np.zeros(data.shape)
-    if thr is not None:
-        thr_data[data >= thr] = 1
-        thr_data[data < thr] = 0
-    else:
-        background_intensity = np.min(data)
-        if background_intensity != 1:
-            thr_data[data > background_intensity] = 1
-            thr_data[data == background_intensity] = 0
-        else:
-            thr_data[data == background_intensity] = 0
-            thr_data[data > background_intensity] = 1
-    return nib.Nifti1Image(thr_data, hdr.affine)
+    """Deprecated. Use ``bcblib.imaging.math.binarize`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.binarize_nii is deprecated. "
+        "Use bcblib.imaging.math.binarize instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.math import binarize
+    return binarize(nii, thr=thr)
 
 
 def laterality_ratio(image):
-    """
-    Computes the ratio of volume
-    Parameters
-    ----------
-    image
-
-    Returns
-    -------
-
-    """
-    hdr = load_nifti(image)
-    ori = nib.aff2axcodes(hdr.affine)
-    data = hdr.get_fdata()
-    mid_x = int(data.shape[0] / 2)
-    # So, if the lesioned voxels have x <= mid_x they are on the RIGHT (in LAS orientation)
-    coord = np.where(data)
-    if ((ori[0] == 'L' and ori[1] == 'A') or (ori[0] == 'R' and ori[1] == 'P')) and ori[2] == 'S':
-        right_les = len(coord[0][coord[0] <= mid_x])
-        left_les = len(coord[0][coord[0] > mid_x])
-    else:
-        right_les = len(coord[0][coord[0] > mid_x])
-        left_les = len(coord[0][coord[0] <= mid_x])
-    total_les_vol = len(coord[0])
-    right_ratio = right_les / total_les_vol
-    left_ratio = left_les / total_les_vol
-    return left_ratio - right_ratio
+    """Deprecated. Use ``bcblib.imaging.stats.laterality_ratio`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.laterality_ratio is deprecated. "
+        "Use bcblib.imaging.stats.laterality_ratio instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.stats import laterality_ratio as _fn
+    return _fn(image)
 
 
 def has_big_enough_cluster(img, min_cluster_size=4):
-    hdr = load_nifti(img)
+    hdr = _load_nifti(img)
     data, _ = connected_regions(hdr, min_region_size=1, extract_type='connected_components', smoothing_fwhm=0)
     data = data.get_fdata()
     max_cluster_size = np.max([np.count_nonzero(data[..., i]) for i in range(data.shape[-1])])
@@ -426,14 +306,14 @@ def has_big_enough_cluster(img, min_cluster_size=4):
 
 
 def get_volume(img, ratio=False, threshold=0):
-    if not ratio:
-        # volume of voxels with > threshold
-        data = load_nifti(img).get_fdata()
-        return np.count_nonzero(data > threshold)
-    else:
-        # ratio of voxels with > threshold by the total number of voxels
-        data = load_nifti(img).get_fdata()
-        return np.count_nonzero(data > threshold) / np.prod(data.shape)
+    """Deprecated. Use ``bcblib.imaging.stats.volume_count`` instead."""
+    warnings.warn(
+        "bcblib.tools.nifti_utils.get_volume is deprecated. "
+        "Use bcblib.imaging.stats.volume_count instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    from bcblib.imaging.stats import volume_count
+    return volume_count(img, ratio=ratio, threshold=threshold)
 
 
 def mask_statistical_image(stat_img: nib.Nifti1Image, mask_img: nib.Nifti1Image, verbose: bool=True) -> nib.Nifti1Image:
@@ -487,7 +367,7 @@ def mask_statistical_image(stat_img: nib.Nifti1Image, mask_img: nib.Nifti1Image,
 def plot_statistical_map(stat_img_path: str, template_path: str, output_folder: str,
                          otf_font_path: str = None, title: str = '', cmap: str = 'viridis',
                          prefix: str = '', low_threshold: float = None,
-                         mask_brain: str | nib.Nifti1Image = None, grid_size: str = '3x5') -> None:
+                         mask_brain: Union[str, nib.Nifti1Image] = None, grid_size: str = '3x5') -> None:
     """
     Plot a statistical map overlaying a template image and save the resulting figure.
 
@@ -633,7 +513,7 @@ def plot_statistical_map(stat_img_path: str, template_path: str, output_folder: 
 
 
 def get_dispersion(img):
-    nii = load_nifti(img)
+    nii = _load_nifti(img)
     # zeros to non-zero values ratios
     data = nii.get_fdata()
     zero_nonzero_ratio = np.count_nonzero(data) / np.prod(data.shape)

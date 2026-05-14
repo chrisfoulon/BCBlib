@@ -1,0 +1,138 @@
+"""BIDS path utilities for the lesion_features pipeline."""
+
+import re
+from pathlib import Path
+from typing import Dict, Iterator, Optional, Tuple
+
+
+def parse_bids_entities(path) -> Dict[str, Optional[str]]:
+    """Parse BIDS entities from a filename.
+
+    Returns
+    -------
+    dict with keys: sub, ses, space, res, label, desc, suffix, extension
+    Missing optional entities are None.
+    """
+    name = Path(path).name
+    entities: Dict[str, Optional[str]] = {
+        "sub": None, "ses": None, "space": None, "res": None,
+        "label": None, "desc": None, "suffix": None, "extension": None,
+    }
+    # extract key-value entities (match both leading and internal)
+    for m in re.finditer(r'(?:^|_)([a-zA-Z]+)-([^_\.]+)', name):
+        key, val = m.group(1), m.group(2)
+        if key in entities:
+            entities[key] = val
+    # extract suffix and extension
+    # suffix is the last _-separated part before the first dot
+    parts = name.split(".")
+    stem = parts[0]
+    extension = "." + ".".join(parts[1:]) if len(parts) > 1 else ""
+    entities["extension"] = extension if extension else None
+    suffix_m = re.search(r'_([^_\-]+)$', stem)
+    entities["suffix"] = suffix_m.group(1) if suffix_m else None
+    return entities
+
+
+def build_lf_csv_path(
+    output_dir,
+    sub: str,
+    ses: Optional[str],
+    space: str,
+    feature_variant: str,
+    atlas_name: str,
+) -> Path:
+    """Build output path for a lesion-features CSV file.
+
+    Example
+    -------
+    sub-001_space-MNI152NLin6Asym_LF-lesion_atlas-JHU.csv
+    sub-001_ses-01_space-MNI152NLin6Asym_LF-disconnectome_atlas-JHU.csv
+    """
+    ses_part = f"_ses-{ses}" if ses else ""
+    name = f"sub-{sub}{ses_part}_space-{space}_LF-{feature_variant}_atlas-{atlas_name}.csv"
+    sub_dir = Path(output_dir) / f"sub-{sub}"
+    if ses:
+        sub_dir = sub_dir / f"ses-{ses}"
+    return sub_dir / "anat" / name
+
+
+def build_lf_tsv_path(
+    output_dir,
+    sub: str,
+    ses: Optional[str],
+    space: str,
+    desc: str,
+) -> Path:
+    """Build output path for a lesion-features mapstats TSV.
+
+    Example
+    -------
+    sub-001_space-MNI152NLin6Asym_desc-lesion_mapstats.tsv
+    """
+    ses_part = f"_ses-{ses}" if ses else ""
+    name = f"sub-{sub}{ses_part}_space-{space}_desc-{desc}_mapstats.tsv"
+    sub_dir = Path(output_dir) / f"sub-{sub}"
+    if ses:
+        sub_dir = sub_dir / f"ses-{ses}"
+    return sub_dir / "anat" / name
+
+
+def build_prep_path(
+    prep_dir,
+    sub: str,
+    ses: Optional[str],
+    suffix: str,
+    label_or_desc: str,
+) -> Path:
+    """Build output path for a preprocessed NIfTI in the prep derivatives.
+
+    Parameters
+    ----------
+    suffix : str
+        BIDS suffix, e.g. ``'mask'``.
+    label_or_desc : str
+        Either ``'label-lesion'`` or ``'desc-disconnectome'`` (full entity string).
+
+    Returns
+    -------
+    Path
+        e.g. ``prep_dir/sub-001/anat/sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz``
+    """
+    from bcblib.tools.lesion_features._constants import TARGET_SPACE, TARGET_RES
+    ses_part = f"_ses-{ses}" if ses else ""
+    name = (
+        f"sub-{sub}{ses_part}"
+        f"_space-{TARGET_SPACE}_res-{TARGET_RES}"
+        f"_{label_or_desc}_{suffix}.nii.gz"
+    )
+    sub_dir = Path(prep_dir) / f"sub-{sub}"
+    if ses:
+        sub_dir = sub_dir / f"ses-{ses}"
+    return sub_dir / "anat" / name
+
+
+def iter_bids_lesions(bids_dir) -> Iterator[Tuple[str, Optional[str], Path]]:
+    """Yield ``(sub_id, ses_id_or_None, lesion_path)`` for every lesion mask.
+
+    Searches ``bids_dir/sub-*/[ses-*/]anat/*_label-lesion_mask.nii.gz``.
+    """
+    bids_root = Path(bids_dir)
+    for sub_dir in sorted(bids_root.glob("sub-*")):
+        if not sub_dir.is_dir():
+            continue
+        sub_id = sub_dir.name[4:]  # strip "sub-"
+        # flat layout (no session)
+        anat_dir = sub_dir / "anat"
+        if anat_dir.is_dir():
+            for f in sorted(anat_dir.glob("*_label-lesion_mask.nii.gz")):
+                yield sub_id, None, f
+        # session layout
+        for ses_dir in sorted(sub_dir.glob("ses-*")):
+            if not ses_dir.is_dir():
+                continue
+            ses_id = ses_dir.name[4:]  # strip "ses-"
+            anat_dir = ses_dir / "anat"
+            if anat_dir.is_dir():
+                for f in sorted(anat_dir.glob("*_label-lesion_mask.nii.gz")):
+                    yield sub_id, ses_id, f

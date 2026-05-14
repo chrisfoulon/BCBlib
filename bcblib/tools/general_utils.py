@@ -1,6 +1,7 @@
 import csv
 import json
 import random
+import uuid
 from argparse import ArgumentTypeError
 from pathlib import Path
 
@@ -24,14 +25,153 @@ def str_to_lower(value):
     return value.lower()
 
 
-def open_json(path):
+class EnhancedEncoder(json.JSONEncoder):
+    """Enhanced JSON encoder with support for numpy types and UUIDs.
+    
+    Provides serialization support for:
+    - UUID objects (converted to string representation)
+    - NumPy numeric types and arrays  
+    - Pandas Series and custom objects with to_dict() method
+    """
+    def default(self, obj):
+        if isinstance(obj, uuid.UUID):
+            return str(obj)  # Convert UUID objects to string representation
+        elif isinstance(obj, np.number):
+            return obj.item()  # Handles ALL numpy numeric types
+        elif isinstance(obj, (np.ndarray, pd.Series)):
+            return obj.tolist()  # Preserves array structure as lists
+        elif hasattr(obj, 'to_dict'):  # Handle pandas/custom objects with to_dict method
+            return obj.to_dict()
+        try:
+            # Let the base class handle it or throw an exception
+            return super(EnhancedEncoder, self).default(obj)
+        except TypeError:
+            # Last resort: convert to string
+            return str(obj)
+
+
+class EnhancedNumpyEncoder(EnhancedEncoder):
+    """Deprecated: Use EnhancedEncoder instead.
+    
+    This class is kept for backward compatibility but will be removed in future versions.
+    Please use EnhancedEncoder which provides the same functionality with a more accurate name.
+    """
+    def __init__(self, *args, **kwargs):
+        import warnings
+        warnings.warn(
+            "EnhancedNumpyEncoder is deprecated and will be removed in a future version. "
+            "Use EnhancedEncoder instead, which provides the same functionality.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
+
+
+def uuid_object_hook(dct, uuid_keys=None, uuid_patterns=None):
+    """Convert string UUIDs back to UUID objects where appropriate.
+    
+    This function automatically detects dictionary keys that contain UUID values
+    and attempts to convert string values back to UUID objects. Non-UUID strings
+    are left unchanged for backward compatibility.
+    
+    Parameters
+    ----------
+    dct : dict
+        Dictionary from JSON deserialization
+    uuid_keys : set or list, optional
+        Specific key names that should be treated as UUIDs.
+        Default: {'user_id', 'owner_id', 'workspace_id', 'model_id', 'granted_by'}
+    uuid_patterns : list, optional
+        Patterns for key names (e.g., ['_id', '_uuid']).
+        Default: ['_id'] (matches keys ending with '_id')
+        
+    Returns
+    -------
+    dict
+        Dictionary with UUID strings converted to UUID objects where appropriate
+    """
+    # Conservative defaults - exclude generic 'id' to avoid breaking common usage
+    if uuid_keys is None:
+        uuid_keys = {'user_id', 'owner_id', 'workspace_id', 'model_id', 'granted_by'}
+    
+    if uuid_patterns is None:
+        uuid_patterns = ['_id']  # Only match *_id patterns, not bare 'id'
+    
+    # Convert to set for faster lookups
+    if not isinstance(uuid_keys, set):
+        uuid_keys = set(uuid_keys)
+    
+    for key, value in dct.items():
+        should_convert = False
+        
+        # Check explicit key names
+        if key in uuid_keys:
+            should_convert = True
+        
+        # Check patterns
+        for pattern in uuid_patterns:
+            if key.endswith(pattern):
+                should_convert = True
+                break
+        
+        # Convert if criteria met and value is string
+        if should_convert and isinstance(value, str):
+            try:
+                dct[key] = uuid.UUID(value)
+            except (ValueError, TypeError):
+                # Not a valid UUID string, keep as string for backward compatibility
+                pass
+    
+    return dct
+
+
+def open_json(path, convert_uuids=True, uuid_keys=None, uuid_patterns=None):
+    """Load JSON from file with optional UUID conversion.
+    
+    Parameters
+    ----------
+    path : str or Path
+        Path to JSON file
+    convert_uuids : bool, default=True
+        Whether to automatically convert UUID strings to UUID objects
+    uuid_keys : set or list, optional
+        Specific key names that should be treated as UUIDs.
+        Only used if convert_uuids=True.
+    uuid_patterns : list, optional
+        Patterns for key names (e.g., ['_id', '_uuid']).
+        Only used if convert_uuids=True.
+        
+    Returns
+    -------
+    dict or list
+        Parsed JSON data with optional UUID conversion
+    """
     with open(path, 'r') as j:
-        return json.load(j)
+        if convert_uuids:
+            # Create a partial function with the custom parameters
+            def custom_uuid_hook(dct):
+                return uuid_object_hook(dct, uuid_keys=uuid_keys, uuid_patterns=uuid_patterns)
+            return json.load(j, object_hook=custom_uuid_hook)
+        else:
+            return json.load(j)
 
 
 def save_json(path, d):
+    """Save data to JSON file with enhanced encoding support.
+    
+    Parameters
+    ----------
+    path : str or Path
+        Path to save JSON file
+    d : dict or list
+        Data to serialize to JSON
+        
+    Returns
+    -------
+    None
+    """
     with open(path, 'w+') as j:
-        return json.dump(d, j, indent=4)
+        return json.dump(d, j, indent=4, cls=EnhancedEncoder)
 
 
 def save_list(path, li):
