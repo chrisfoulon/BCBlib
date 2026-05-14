@@ -64,6 +64,15 @@ either a file path or an already-loaded `Nifti1Image`.
 
 ### Research Tools (`bcblib.tools`)
 
+**`lesion_features`** — End-to-end pipeline for extracting atlas-based overlap profiles
+from patient lesion masks and disconnectome maps.
+See [docs/lesion_features_pipeline.md](docs/lesion_features_pipeline.md) for full usage.
+
+**`damage_profile`**
+Compute overlap statistics between a subject map (lesion or disconnectome) and one
+or more brain atlases. Returns a DataFrame per atlas with per-region voxel counts,
+coverage fraction, mean overlap, and percentiles.
+
 **`best_overlap`**
 Compute preserved structural connectivity from patient and cluster disconnectome
 maps using Bayesian modelling (PyMC). Outputs latent connectivity scores with
@@ -122,11 +131,28 @@ z-score normalisation, rank transform.
 | `bcb-split` | `bcb-split 4d.nii.gz -o out/` | Split a 4-D NIfTI along the volume axis |
 | `bcb-convert` | `bcb-convert brain.nii` | Convert between `.nii` and `.nii.gz` |
 | `bcb-dataset-split` | see below | Balanced dataset splitting from a CSV file |
+| `bcb-lf-preprocess` | see below | Stage 1: normalise lesions to MNI6 1mm + compute disconnectomes |
+| `bcb-lesion-features` | see below | Stage 2: extract atlas overlap features from prep output |
 | `bcb-damage-profile` | see below | Overlap statistics between a subject map and brain atlases |
 | `randomise_helper` | — | Build FSL randomise design files from a spreadsheet |
 | `pick_up_matched_synth_lesions` | — | Select synthetic lesions matching a size distribution |
 
 ```bash
+# Stage 1: normalise lesions to MNI152NLin6Asym 1mm and compute disconnectomes
+bcb-lf-preprocess \
+    --bids-dir /data/stroke_cohort \
+    --output-dir /data/stroke_cohort_prep \
+    --bcbtoolkit /opt/BCBToolKit \
+    --tracks-dir /opt/BCBToolKit/Tools/extraFiles/tracks_1mm \
+    --ncores 8 \
+    --tmpdir /scratch/disco_tmp   # set on JupyterHub/HPC if /tmp is restricted
+
+# Stage 2: extract atlas overlap features (downloads atlases on first run)
+bcb-lesion-features \
+    --prep-dir /data/stroke_cohort_prep \
+    --output-dir /data/stroke_cohort_features \
+    --ebrains --assume-yes
+
 # Balanced dataset split — writes splits.csv and splits_report.json
 bcb-dataset-split \
     --input subjects.csv \

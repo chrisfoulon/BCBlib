@@ -38,6 +38,14 @@ def _build_parser():
         help="Skip subjects whose output already exists",
     )
     p.add_argument(
+        "--tmpdir", default=None, metavar="PATH",
+        help=(
+            "Directory for run_disco.sh intermediate files (-w flag). "
+            "Defaults to $TMPDIR/bcb_disco_<PID> or /tmp. "
+            "Set this on systems where /tmp is restricted (e.g. JupyterHub/HPC)."
+        ),
+    )
+    p.add_argument(
         "--dry-run", action="store_true",
         help="Print plan without executing",
     )
@@ -99,6 +107,7 @@ def main(argv=None):
         run_disco_batch(
             lesion_dir, disco_flat, kit,
             ncores=args.ncores, tracks_dir=args.tracks_dir,
+            tmpdir=args.tmpdir,
         )
 
         # Move disconnectomes into the per-subject BIDS anat directories

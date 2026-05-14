@@ -58,6 +58,7 @@ def run_disco_batch(
     bcbtoolkit: Path,
     ncores: Optional[int] = None,
     tracks_dir: Optional[str] = None,
+    tmpdir: Optional[str] = None,
 ) -> Dict[str, Path]:
     """Run run_disco.sh in folder mode on a directory of lesion NIfTIs.
 
@@ -72,6 +73,11 @@ def run_disco_batch(
     tracks_dir : str or None
         Path to the tractography atlas directory (-T flag).  Required when the
         tracts are not in BCBToolKit's default location.
+    tmpdir : str or None
+        Directory for intermediate per-subject working files (-w flag).
+        Defaults to ``$TMPDIR/bcb_disco_<PID>`` (or ``/tmp`` if ``$TMPDIR``
+        is unset).  Set this on systems where ``/tmp`` is restricted or too
+        small (e.g. some HPC/JupyterHub environments).
 
     Returns
     -------
@@ -97,6 +103,8 @@ def run_disco_batch(
         cmd += ["-T", str(tracks_dir)]
     if ncores is not None:
         cmd += ["-n", str(ncores)]
+    if tmpdir is not None:
+        cmd += ["-w", str(tmpdir)]
 
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:

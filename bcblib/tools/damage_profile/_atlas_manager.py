@@ -1,5 +1,6 @@
 """Atlas download manager: preset registry, cache, and consent flow."""
 
+import os
 import zipfile
 import urllib.error
 import urllib.request
@@ -229,11 +230,17 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
 def get_atlas_dir() -> Path:
     """Return the root cache directory for downloaded atlases.
 
+    Respects the ``BCBLIB_ATLAS_DIR`` environment variable so that a
+    system-wide shared cache can be used on multi-user servers.
+
     Returns
     -------
     Path
-        ``~/.bcblib/atlases/``
+        ``$BCBLIB_ATLAS_DIR`` if set, otherwise ``~/.bcblib/atlases/``.
     """
+    env = os.environ.get("BCBLIB_ATLAS_DIR")
+    if env:
+        return Path(env)
     return Path.home() / ".bcblib" / "atlases"
 
 
