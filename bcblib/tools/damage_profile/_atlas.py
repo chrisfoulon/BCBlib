@@ -115,6 +115,7 @@ def _parse_text_labels(text: str) -> Dict[int, str]:
 
     Plain text: one label per line, 1-indexed, blank lines skipped.
     TSV: first column is integer index, second column is region name.
+    Header lines whose first field is not an integer are skipped.
 
     Parameters
     ----------
@@ -127,7 +128,8 @@ def _parse_text_labels(text: str) -> Dict[int, str]:
         Integer index → region name.
     """
     labels: Dict[int, str] = {}
-    for i, line in enumerate(text.splitlines()):
+    plain_idx = 0
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -136,9 +138,80 @@ def _parse_text_labels(text: str) -> Dict[int, str]:
             try:
                 labels[int(parts[0])] = parts[1].strip()
             except (ValueError, IndexError):
-                pass
+                pass  # header or malformed line
         else:
-            labels[i + 1] = line
+            plain_idx += 1
+            labels[plain_idx] = line
+    return labels
+
+
+def _parse_csv_labels(text: str) -> Dict[int, str]:
+    """Parse a CSV label file with format ``index,name,...`` (neuroparc style).
+
+    Lines where the index column is not a positive integer are skipped
+    (handles null/header rows).
+
+    Parameters
+    ----------
+    text : str
+        Raw file content.
+
+    Returns
+    -------
+    dict[int, str]
+        Integer index → region name.
+    """
+    labels: Dict[int, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(",")
+        if len(parts) < 2:
+            continue
+        try:
+            idx = int(parts[0])
+        except ValueError:
+            continue
+        name = parts[1].strip()
+        if idx > 0 and name and name.lower() != "null":
+            labels[idx] = name
+    return labels
+
+
+def _parse_alternating_labels(text: str) -> Dict[int, str]:
+    """Parse an alternating name/index-colour label file (Tian atlas style).
+
+    Format (repeating pairs)::
+
+        RegionName
+        index R G B A
+
+    The index on the second line determines the key.
+
+    Parameters
+    ----------
+    text : str
+        Raw file content.
+
+    Returns
+    -------
+    dict[int, str]
+        Integer index → region name.
+    """
+    import re
+    labels: Dict[int, str] = {}
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    i = 0
+    while i < len(lines) - 1:
+        name_line = lines[i]
+        idx_line = lines[i + 1]
+        m = re.match(r'^(\d+)\s', idx_line)
+        if m:
+            labels[int(m.group(1))] = name_line
+            i += 2
+        else:
+            i += 1
     return labels
 
 
@@ -146,13 +219,26 @@ def _parse_label_file(label_file) -> Dict[int, str]:
     """Parse a label file into index→name dict.
 
     Supported formats:
-    - Plain text: one name per line, 1-indexed.
-    - TSV: first column is integer index, second column is name.
+
     - FSL XML: ``<label index="N" ...>Name</label>`` elements.
+    - TSV: tab-separated; first column integer index, second column name.
+    - CSV: comma-separated ``index,name,...`` (neuroparc style).
+    - Alternating: name line followed by ``index R G B A`` line (Tian style).
+    - Plain text: one name per line, 1-indexed, blank lines skipped.
     """
     text = Path(label_file).read_text().strip()
     if text.lstrip().startswith("<"):
         return _parse_fsl_xml_labels(text)
+    # CSV: first non-empty data line starts with a digit followed by a comma
+    data_lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if data_lines and "," in data_lines[0] and data_lines[0].split(",")[0].lstrip("-").isdigit():
+        return _parse_csv_labels(text)
+    # Alternating (Tian style): second non-empty line is "index R G B A" — five
+    # whitespace-separated integers.  A simple "\d+ \d+" would also match TSV
+    # lines whose region name starts with a digit, so require 5 numeric fields.
+    import re
+    if len(data_lines) >= 2 and re.match(r'^\d+(\s+\d+){4}\s*$', data_lines[1]):
+        return _parse_alternating_labels(text)
     return _parse_text_labels(text)
 
 

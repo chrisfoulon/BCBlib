@@ -676,6 +676,103 @@ class TestAtlasManager:
             mock_input.assert_not_called()
         assert "tract" in result
 
+    def test_new_presets_in_list(self):
+        from bcblib.tools.damage_profile._atlas_manager import list_preset_atlases
+        atlases = list_preset_atlases()
+        for key in ("aal", "schaefer_200_7n", "schaefer_400_7n",
+                    "schaefer_200_tian_s1", "schaefer_400_tian_s1"):
+            assert key in atlases, f"Expected preset key '{key}' not found"
+
+    def test_new_presets_have_required_fields(self):
+        from bcblib.tools.damage_profile._atlas_manager import PRESET_ATLASES
+        for key in ("aal", "schaefer_200_7n", "schaefer_400_7n",
+                    "schaefer_200_tian_s1", "schaefer_400_tian_s1"):
+            info = PRESET_ATLASES[key]
+            assert info.url, f"{key}: missing url"
+            assert info.space == "MNI152NLin6Asym", f"{key}: wrong space"
+            assert info.label_file, f"{key}: missing label_file"
+            assert info.label_url, f"{key}: missing label_url"
+            assert info.nifti_path, f"{key}: missing nifti_path"
+
+    def test_aal_from_cache(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas, PRESET_ATLASES
+        info = PRESET_ATLASES["aal"]
+        cache = tmp_path / "aal"
+        cache.mkdir()
+        # fake NIfTI with two label values
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[0, 0, 0] = 1.0
+        arr[1, 1, 1] = 2.0
+        _save_nifti(cache / info.nifti_path, arr)
+        # fake label file (neuroparc CSV format — no header row)
+        (cache / info.label_file).write_text(
+            "1,Precentral_L\n2,Precentral_R\n"
+        )
+        with patch(
+            "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
+            return_value=tmp_path,
+        ):
+            result = get_preset_atlas("aal")
+        assert "Precentral_L" in result
+        assert "Precentral_R" in result
+
+    def test_schaefer_200_7n_from_cache(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas, PRESET_ATLASES
+        info = PRESET_ATLASES["schaefer_200_7n"]
+        cache = tmp_path / "schaefer_200_7n"
+        cache.mkdir()
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[0, 0, 0] = 1.0
+        _save_nifti(cache / info.nifti_path, arr)
+        # fake TSV label file (TemplateFlow format with header)
+        (cache / info.label_file).write_text(
+            "index\tname\n1\t7Networks_LH_Vis_1\n"
+        )
+        with patch(
+            "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
+            return_value=tmp_path,
+        ):
+            result = get_preset_atlas("schaefer_200_7n")
+        assert "7Networks_LH_Vis_1" in result
+
+    def test_schaefer_tian_s1_from_cache(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas, PRESET_ATLASES
+        info = PRESET_ATLASES["schaefer_200_tian_s1"]
+        cache = tmp_path / "schaefer_200_tian_s1"
+        cache.mkdir()
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[0, 0, 0] = 1.0
+        arr[1, 1, 1] = 2.0
+        _save_nifti(cache / info.nifti_path, arr)
+        # fake alternating-line label file (Tian format)
+        (cache / info.label_file).write_text(
+            "7Networks_LH_Vis_1\n1 255 0 0 255\n"
+            "HIP-lh\n2 0 255 0 255\n"
+        )
+        with patch(
+            "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
+            return_value=tmp_path,
+        ):
+            result = get_preset_atlas("schaefer_200_tian_s1")
+        assert "7Networks_LH_Vis_1" in result
+        assert "HIP-lh" in result
+
+    def test_download_label_url_fetched(self, tmp_path):
+        """When label_url is set, _download_atlas should also retrieve the label file."""
+        from bcblib.tools.damage_profile._atlas_manager import _download_atlas, PRESET_ATLASES
+        info = PRESET_ATLASES["aal"]
+        fetched_urls = []
+
+        def fake_retrieve(url, dest):
+            fetched_urls.append(url)
+            Path(dest).write_bytes(b"fake")
+
+        with patch("urllib.request.urlretrieve", side_effect=fake_retrieve):
+            _download_atlas(info, tmp_path)
+
+        assert info.url in fetched_urls
+        assert info.label_url in fetched_urls
+
 
 # ---------------------------------------------------------------------------
 # T9 — CLI
@@ -810,6 +907,54 @@ class TestCoverageGaps:
         # blank line skipped; RegionB gets index 3 (line 3 in file, but blank
         # shifts enumeration) — what matters is blank line doesn't error
         assert len(result) == 2
+
+    def test_parse_csv_labels_basic(self):
+        from bcblib.tools.damage_profile._atlas import _parse_csv_labels
+        text = "index,name\n1,Precentral_L\n2,Precentral_R\n0,Background\n"
+        result = _parse_csv_labels(text)
+        assert result == {1: "Precentral_L", 2: "Precentral_R"}
+        assert 0 not in result  # index 0 excluded
+
+    def test_parse_csv_labels_null_skipped(self):
+        from bcblib.tools.damage_profile._atlas import _parse_csv_labels
+        text = "1,Precentral_L\n2,Null\n3,Region_C\n"
+        result = _parse_csv_labels(text)
+        assert 2 not in result  # null name excluded
+        assert 1 in result and 3 in result
+
+    def test_parse_alternating_labels_basic(self):
+        from bcblib.tools.damage_profile._atlas import _parse_alternating_labels
+        text = (
+            "7Networks_LH_Vis_1\n1 255 0 0 255\n"
+            "7Networks_LH_Vis_2\n2 0 255 0 255\n"
+            "HIP-lh\n16 128 64 0 255\n"
+        )
+        result = _parse_alternating_labels(text)
+        assert result == {1: "7Networks_LH_Vis_1", 2: "7Networks_LH_Vis_2", 16: "HIP-lh"}
+
+    def test_parse_alternating_labels_skips_non_matching(self):
+        from bcblib.tools.damage_profile._atlas import _parse_alternating_labels
+        # If second line doesn't match the pattern, the parser advances by 1
+        text = "SomeName\nnot-an-index line\nOtherName\n3 0 0 0 255\n"
+        result = _parse_alternating_labels(text)
+        assert 3 in result
+
+    def test_parse_label_file_dispatches_csv(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas import _parse_label_file
+        f = tmp_path / "labels.csv"
+        f.write_text("1,Precentral_L\n2,Precentral_R\n")
+        result = _parse_label_file(str(f))
+        assert result == {1: "Precentral_L", 2: "Precentral_R"}
+
+    def test_parse_label_file_dispatches_alternating(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas import _parse_label_file
+        f = tmp_path / "label.txt"
+        f.write_text(
+            "RegionA\n1 255 0 0 255\n"
+            "RegionB\n2 0 255 0 255\n"
+        )
+        result = _parse_label_file(str(f))
+        assert result == {1: "RegionA", 2: "RegionB"}
 
     def test_4d_nifti_threshold_excludes_volume(self, tmp_path):
         from bcblib.tools.damage_profile import AtlasSpec, load_atlas

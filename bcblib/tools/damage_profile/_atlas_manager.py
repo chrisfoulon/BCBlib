@@ -28,10 +28,14 @@ class AtlasInfo:
     citation : str
         Reference string for the atlas.
     label_file : str or None
-        Relative path within the extracted archive to the label file, if any.
+        Relative path within the cache directory to the label file, if any.
     nifti_path : str or None
-        Relative path within the extracted archive to the NIfTI file (for
+        Relative path within the cache directory to the NIfTI file (for
         single-file atlases).  ``None`` for directory-format atlases.
+    label_url : str or None
+        Secondary download URL for the label file.  When set, the label file
+        is downloaded from this URL and saved as ``label_file`` inside the
+        cache directory after the main atlas file is downloaded.
     """
 
     full_name: str
@@ -42,6 +46,7 @@ class AtlasInfo:
     citation: str
     label_file: Optional[str] = None
     nifti_path: Optional[str] = None
+    label_url: Optional[str] = None
 
 
 PRESET_ATLASES: Dict[str, AtlasInfo] = {
@@ -116,6 +121,107 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
         space="MNI152NLin2009cAsym",
         citation="Yeh et al. (2022) NeuroImage 249:118931",
     ),
+    "aal": AtlasInfo(
+        full_name="Automated Anatomical Labeling Atlas (AAL, 116 regions)",
+        url=(
+            "https://raw.githubusercontent.com/neurodata/neuroparc/master/"
+            "atlases/label/Human/AAL_space-MNI152NLin6_res-1x1x1.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation="Tzourio-Mazoyer et al. (2002) NeuroImage 15:273-289",
+        nifti_path="AAL_space-MNI152NLin6_res-1x1x1.nii.gz",
+        label_file="AAL.csv",
+        label_url=(
+            "https://raw.githubusercontent.com/neurodata/neuroparc/master/"
+            "atlases/label/Human/Anatomical-labels-csv/AAL.csv"
+        ),
+    ),
+    "schaefer_200_7n": AtlasInfo(
+        full_name="Schaefer 2018 Cortical Parcellation (200 parcels, 7 networks)",
+        url=(
+            "https://raw.githubusercontent.com/neurodata/neuroparc/master/"
+            "atlases/label/Human/Schaefer200_space-MNI152NLin6_res-1x1x1.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation="Schaefer et al. (2018) Cereb Cortex 28:3095-3114",
+        nifti_path="Schaefer200_space-MNI152NLin6_res-1x1x1.nii.gz",
+        label_file="Schaefer200_7N.tsv",
+        label_url=(
+            "https://raw.githubusercontent.com/templateflow/tpl-MNI152NLin6Asym/"
+            "master/tpl-MNI152NLin6Asym_atlas-Schaefer2018_desc-200Parcels7Networks_dseg.tsv"
+        ),
+    ),
+    "schaefer_400_7n": AtlasInfo(
+        full_name="Schaefer 2018 Cortical Parcellation (400 parcels, 7 networks)",
+        url=(
+            "https://raw.githubusercontent.com/neurodata/neuroparc/master/"
+            "atlases/label/Human/Schaefer400_space-MNI152NLin6_res-1x1x1.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation="Schaefer et al. (2018) Cereb Cortex 28:3095-3114",
+        nifti_path="Schaefer400_space-MNI152NLin6_res-1x1x1.nii.gz",
+        label_file="Schaefer400_7N.tsv",
+        label_url=(
+            "https://raw.githubusercontent.com/templateflow/tpl-MNI152NLin6Asym/"
+            "master/tpl-MNI152NLin6Asym_atlas-Schaefer2018_desc-400Parcels7Networks_dseg.tsv"
+        ),
+    ),
+    "schaefer_200_tian_s1": AtlasInfo(
+        full_name="Schaefer 200 + Tian Subcortex S1 (216 regions)",
+        url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/MNIvolumetric/"
+            "Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S1_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation=(
+            "Tian et al. (2020) Science 369:eabb7547; "
+            "Schaefer et al. (2018) Cereb Cortex 28:3095-3114"
+        ),
+        nifti_path=(
+            "Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S1"
+            "_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        label_file="Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S1_label.txt",
+        label_url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/"
+            "Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S1_label.txt"
+        ),
+    ),
+    "schaefer_400_tian_s1": AtlasInfo(
+        full_name="Schaefer 400 + Tian Subcortex S1 (416 regions)",
+        url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/MNIvolumetric/"
+            "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S1_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        size_mb=0.4,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation=(
+            "Tian et al. (2020) Science 369:eabb7547; "
+            "Schaefer et al. (2018) Cereb Cortex 28:3095-3114"
+        ),
+        nifti_path=(
+            "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S1"
+            "_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        label_file="Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S1_label.txt",
+        label_url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/"
+            "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S1_label.txt"
+        ),
+    ),
 }
 
 
@@ -170,13 +276,9 @@ def _download_atlas(info: AtlasInfo, dest: Path) -> None:
         print(f"Downloading {info.full_name} …")
         urllib.request.urlretrieve(info.url, out)
 
-    # Buckner TSV label file is a separate URL
-    if info.full_name.startswith("Buckner") and info.label_file:
-        tsv_url = (
-            "https://raw.githubusercontent.com/DiedrichsenLab/"
-            "cerebellar_atlases/master/Buckner_2011/atl-Buckner7.tsv"
-        )
-        urllib.request.urlretrieve(tsv_url, dest / "atl-Buckner7.tsv")
+    # Download secondary label file if a separate URL is provided
+    if info.label_url and info.label_file:
+        urllib.request.urlretrieve(info.label_url, dest / info.label_file)
 
 
 def get_preset_atlas(
