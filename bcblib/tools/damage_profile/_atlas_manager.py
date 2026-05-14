@@ -1,6 +1,7 @@
 """Atlas download manager: preset registry, cache, and consent flow."""
 
 import zipfile
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -278,7 +279,14 @@ def _download_atlas(info: AtlasInfo, dest: Path) -> None:
 
     # Download secondary label file if a separate URL is provided
     if info.label_url and info.label_file:
-        urllib.request.urlretrieve(info.label_url, dest / info.label_file)
+        import warnings as _warnings
+        try:
+            urllib.request.urlretrieve(info.label_url, dest / info.label_file)
+        except urllib.error.HTTPError as exc:
+            _warnings.warn(
+                f"Could not download label file for '{info.full_name}' "
+                f"(HTTP {exc.code}); atlas will be used without region names."
+            )
 
 
 def get_preset_atlas(

@@ -10,9 +10,13 @@ import pandas as pd
 
 from bcblib.imaging._types import NiftiLike
 from bcblib.imaging.io import load_nifti, is_nifti
-from bcblib.tools.damage_profile._atlas import AtlasSpec, load_atlas
+from bcblib.tools.damage_profile._atlas import (
+    AtlasSpec, load_atlas, LABEL_DATA_KEY, LABEL_NAMES_KEY,
+)
 from bcblib.tools.damage_profile._space import check_and_resample
-from bcblib.tools.damage_profile._stats import compute_region_stats, compute_subject_stats
+from bcblib.tools.damage_profile._stats import (
+    compute_region_stats, compute_region_stats_from_labels, compute_subject_stats,
+)
 
 
 def _load_atlas_reference(spec: AtlasSpec) -> Optional[nib.Nifti1Image]:
@@ -33,34 +37,48 @@ def _load_atlas_reference(spec: AtlasSpec) -> Optional[nib.Nifti1Image]:
 
 
 def _resample_atlas_dict(
-    atlas_dict: Dict[str, np.ndarray],
+    atlas_dict: Dict,
     atlas_affine: np.ndarray,
     subject_img: nib.Nifti1Image,
     spec: AtlasSpec,
     on_space_mismatch: str,
-) -> Dict[str, np.ndarray]:
-    """Resample every region in *atlas_dict* to the subject voxel grid.
+) -> Dict:
+    """Resample atlas data to the subject voxel grid.
 
-    Returns the dict unchanged if subject and atlas are already on the same grid.
+    Handles both the compact label format (sentinel keys) and the legacy
+    per-region weight dict (4D NIfTI / directory atlases).
 
     Parameters
     ----------
-    atlas_dict : dict[str, np.ndarray]
+    atlas_dict : dict
     atlas_affine : np.ndarray
-        Affine of the atlas (used to build per-region NIfTI headers).
     subject_img : Nifti1Image
     spec : AtlasSpec
     on_space_mismatch : str
-        Passed through to ``check_and_resample``.
 
     Returns
     -------
-    dict[str, np.ndarray]
-        Same keys as *atlas_dict*; values resampled to *subject_img* grid.
+    dict
+        Same structure as *atlas_dict* with data resampled to *subject_img*.
     """
-    # Quick check: are they already on the same grid?
+    # Compact label atlas: resample the single integer array once.
+    if LABEL_DATA_KEY in atlas_dict:
+        label_array = atlas_dict[LABEL_DATA_KEY]
+        if (
+            subject_img.shape[:3] == label_array.shape[:3]
+            and np.allclose(subject_img.affine, atlas_affine, atol=1e-3)
+        ):
+            return atlas_dict
+        label_img = nib.Nifti1Image(label_array.astype(np.float32), atlas_affine)
+        resampled_data = check_and_resample(
+            subject_img, label_img, spec.name, on_space_mismatch
+        ).astype(np.int32)
+        return {LABEL_DATA_KEY: resampled_data, LABEL_NAMES_KEY: atlas_dict[LABEL_NAMES_KEY]}
+
+    # Legacy per-region weight dict (4D NIfTI / directory atlases).
+    first_arr = atlas_dict[next(iter(atlas_dict))]
     if (
-        subject_img.shape[:3] == tuple(atlas_dict[next(iter(atlas_dict))].shape[:3])
+        subject_img.shape[:3] == tuple(first_arr.shape[:3])
         and np.allclose(subject_img.affine, atlas_affine, atol=1e-3)
     ):
         return atlas_dict
@@ -129,7 +147,15 @@ def damage_profile(
                 atlas_dict, atlas_ref.affine, subject_img, spec, on_space_mismatch
             )
 
-        df = compute_region_stats(subject_data, atlas_dict, min_overlap_voxels)
+        if LABEL_DATA_KEY in atlas_dict:
+            df = compute_region_stats_from_labels(
+                subject_data,
+                atlas_dict[LABEL_DATA_KEY],
+                atlas_dict[LABEL_NAMES_KEY],
+                min_overlap_voxels,
+            )
+        else:
+            df = compute_region_stats(subject_data, atlas_dict, min_overlap_voxels)
         results[spec.name] = df
 
         if output_dir is not None:

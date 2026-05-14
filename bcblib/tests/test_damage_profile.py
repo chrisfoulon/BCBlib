@@ -108,6 +108,7 @@ class TestAtlasLoading:
 
     def test_label_nifti_correct_n_regions(self, tmp_path):
         from bcblib.tools.damage_profile import AtlasSpec, load_atlas
+        from bcblib.tools.damage_profile._atlas import LABEL_NAMES_KEY
         data = np.zeros((5, 5, 5), dtype=np.float32)
         data[0, 0, 0] = 1
         data[1, 1, 1] = 2
@@ -117,10 +118,11 @@ class TestAtlasLoading:
 
         spec = AtlasSpec(source=str(f), name="test")
         result = load_atlas(spec)
-        assert len(result) == 3
+        assert len(result[LABEL_NAMES_KEY]) == 3
 
     def test_label_nifti_names_from_label_file(self, tmp_path):
         from bcblib.tools.damage_profile import AtlasSpec, load_atlas
+        from bcblib.tools.damage_profile._atlas import LABEL_NAMES_KEY
         data = np.zeros((5, 5, 5), dtype=np.float32)
         data[0, 0, 0] = 1
         data[1, 1, 1] = 2
@@ -131,7 +133,7 @@ class TestAtlasLoading:
 
         spec = AtlasSpec(source=str(f), name="test", label_file=str(label_f))
         result = load_atlas(spec)
-        assert set(result.keys()) == {"Putamen_L", "Putamen_R"}
+        assert set(result[LABEL_NAMES_KEY].values()) == {"Putamen_L", "Putamen_R"}
 
 
 # ---------------------------------------------------------------------------
@@ -713,8 +715,9 @@ class TestAtlasManager:
             return_value=tmp_path,
         ):
             result = get_preset_atlas("aal")
-        assert "Precentral_L" in result
-        assert "Precentral_R" in result
+        from bcblib.tools.damage_profile._atlas import LABEL_NAMES_KEY
+        assert "Precentral_L" in result[LABEL_NAMES_KEY].values()
+        assert "Precentral_R" in result[LABEL_NAMES_KEY].values()
 
     def test_schaefer_200_7n_from_cache(self, tmp_path):
         from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas, PRESET_ATLASES
@@ -733,7 +736,8 @@ class TestAtlasManager:
             return_value=tmp_path,
         ):
             result = get_preset_atlas("schaefer_200_7n")
-        assert "7Networks_LH_Vis_1" in result
+        from bcblib.tools.damage_profile._atlas import LABEL_NAMES_KEY
+        assert "7Networks_LH_Vis_1" in result[LABEL_NAMES_KEY].values()
 
     def test_schaefer_tian_s1_from_cache(self, tmp_path):
         from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas, PRESET_ATLASES
@@ -754,8 +758,9 @@ class TestAtlasManager:
             return_value=tmp_path,
         ):
             result = get_preset_atlas("schaefer_200_tian_s1")
-        assert "7Networks_LH_Vis_1" in result
-        assert "HIP-lh" in result
+        from bcblib.tools.damage_profile._atlas import LABEL_NAMES_KEY
+        assert "7Networks_LH_Vis_1" in result[LABEL_NAMES_KEY].values()
+        assert "HIP-lh" in result[LABEL_NAMES_KEY].values()
 
     def test_download_label_url_fetched(self, tmp_path):
         """When label_url is set, _download_atlas should also retrieve the label file."""

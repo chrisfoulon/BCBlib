@@ -26,6 +26,10 @@ def _build_parser():
         help="Path to BCBToolKit directory containing run_disco.sh",
     )
     p.add_argument(
+        "--tracks-dir", default=None, metavar="PATH",
+        help="Path to tractography atlas directory (-T flag for run_disco.sh)",
+    )
+    p.add_argument(
         "--ncores", type=int, default=None, metavar="N",
         help="Number of parallel cores for run_disco.sh",
     )
@@ -78,17 +82,38 @@ def main(argv=None):
     from bcblib.tools.lesion_features._bids import iter_bids_lesions
     import shutil
 
+    # Flatten all normalised lesions into a tmp dir for run_disco.sh (folder mode)
+    # keeping a mapping so we can move disconnectomes back into BIDS structure.
     lesion_dir = output_dir / "_tmp_lesions_for_disco"
     lesion_dir.mkdir(parents=True, exist_ok=True)
+    disco_flat = output_dir / "_tmp_disco_flat"
+    sub_map = {}  # filename_stem → (sub_id, ses_id, anat_dir)
     try:
         for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
+            stem = lesion_path.name.replace("_label-lesion_mask.nii.gz", "_desc-disconnectome")
+            sub_map[stem] = (sub_id, ses_id, lesion_path.parent)
 
         n = len(list(lesion_dir.glob("*.nii.gz")))
         print(f"Running disconnectome computation for {n} subjects...")
-        run_disco_batch(lesion_dir, output_dir / "disconnectomes", kit, ncores=args.ncores)
+        run_disco_batch(
+            lesion_dir, disco_flat, kit,
+            ncores=args.ncores, tracks_dir=args.tracks_dir,
+        )
+
+        # Move disconnectomes into the per-subject BIDS anat directories
+        moved = 0
+        for disco_file in sorted(disco_flat.glob("*_desc-disconnectome.nii.gz")):
+            stem = disco_file.name.replace(".nii.gz", "")
+            if stem in sub_map:
+                _, _, anat_dir = sub_map[stem]
+                dest = anat_dir / disco_file.name
+                shutil.move(str(disco_file), str(dest))
+                moved += 1
+        print(f"Moved {moved} disconnectome(s) into BIDS structure.")
     finally:
         shutil.rmtree(str(lesion_dir), ignore_errors=True)
+        shutil.rmtree(str(disco_flat), ignore_errors=True)
 
     print("Done.")
 

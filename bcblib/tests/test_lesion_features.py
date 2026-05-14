@@ -202,17 +202,12 @@ class TestPreprocess:
     def test_normalise_resample_only(self):
         from bcblib.tools.lesion_features._preprocess import normalise_lesion_to_mni6
         img_2mm = _make_mni6_2mm()
-        fake_ref = _make_mni6_1mm()
         fake_resampled = _make_mni6_1mm()
 
         with patch(
-            "bcblib.tools.lesion_features._preprocess.resample_to_img",
+            "bcblib.tools.lesion_features._preprocess.resample_img",
             return_value=fake_resampled,
-        ) as mock_rs, patch(
-            "templateflow.api.get", return_value=["dummy_ref.nii.gz"]
-        ), patch(
-            "bcblib.tools.lesion_features._preprocess.nib.load", return_value=fake_ref
-        ):
+        ) as mock_rs:
             result = normalise_lesion_to_mni6(img_2mm, "MNI152NLin6Asym", 2)
 
         mock_rs.assert_called_once()
@@ -221,7 +216,7 @@ class TestPreprocess:
     def test_normalise_warp_required(self):
         from bcblib.tools.lesion_features._preprocess import normalise_lesion_to_mni6
         img_2009c = _make_mni6_1mm()
-        fake_warped = _make_mni6_1mm()
+        fake_warped = _make_mni6_1mm()  # same orientation as input → no reorientation
 
         with patch(
             "bcblib.tools.lesion_features._preprocess._apply_templateflow_warp",
@@ -255,24 +250,16 @@ class TestPreprocess:
     def test_normalise_mni2009c_warp_and_resample(self, tmp_path):
         from bcblib.tools.lesion_features._preprocess import normalise_lesion_to_mni6
         img_2009c = _make_nifti(np.zeros((91, 109, 91), dtype=np.float32))
-        fake_warped = _make_nifti(np.zeros((91, 109, 91), dtype=np.float32))
-        fake_ref = _make_nifti(np.zeros((182, 218, 182), dtype=np.float32))
-        fake_resampled = _make_nifti(np.zeros((182, 218, 182), dtype=np.float32))
+        # fake_warped has same orientation as input (identity) → no reorientation step
+        fake_warped = _make_nifti(np.zeros((182, 218, 182), dtype=np.float32))
 
         with patch(
             "bcblib.tools.lesion_features._preprocess._apply_templateflow_warp",
             return_value=fake_warped,
-        ), patch(
-            "bcblib.tools.lesion_features._preprocess.resample_to_img",
-            return_value=fake_resampled,
-        ), patch(
-            "templateflow.api.get", return_value=["dummy.nii.gz"]
-        ), patch(
-            "bcblib.tools.lesion_features._preprocess.nib.load", return_value=fake_ref
         ):
             result = normalise_lesion_to_mni6(img_2009c, "MNI152NLin2009cAsym", 2)
 
-        assert result is fake_resampled
+        assert result is fake_warped
 
     def test_preprocess_one_saves_file(self, tmp_path):
         from bcblib.tools.lesion_features._preprocess import preprocess_one

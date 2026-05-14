@@ -27,6 +27,7 @@ def get_ebrains_atlas_specs(assume_yes: bool = False):
     """
     from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas
     from bcblib.tools.damage_profile import AtlasSpec
+    from bcblib.tools.damage_profile._atlas_manager import get_atlas_dir, PRESET_ATLASES
 
     specs = []
     for key in EBRAINS_ATLAS_SPECS:
@@ -35,12 +36,16 @@ def get_ebrains_atlas_specs(assume_yes: bool = False):
         except RuntimeError:
             warnings.warn(f"Skipping atlas '{key}': download declined.", RuntimeWarning)
             continue
+        info = PRESET_ATLASES[key]
+        cache = get_atlas_dir() / key
+        label_file = None
+        if info.label_file and (cache / info.label_file).exists():
+            label_file = str(cache / info.label_file)
         specs.append(AtlasSpec(
-            source=str(
-                _preset_cache_path(key)
-            ),
+            source=str(_preset_cache_path(key)),
             name=key,
             space=TARGET_SPACE,
+            label_file=label_file,
         ))
     return specs
 

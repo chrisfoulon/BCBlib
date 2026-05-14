@@ -129,7 +129,20 @@ def check_and_resample(
         warped = _apply_templateflow_warp(atlas_img, atlas_family, subj_family)
         return warped.get_fdata()
 
-    # Tier 2: same family (or unknown), different resolution — use nilearn
+    # Tier 2a: same shape, orientation-only mismatch (e.g. radiological vs
+    # neurological convention for the same physical space).  Use nibabel's
+    # reorientation rather than nilearn resampling — it is exact and avoids
+    # any interpolation artefact.
+    subj_ornt = nib.io_orientation(subject_img.affine)
+    atlas_ornt = nib.io_orientation(atlas_img.affine)
+    if (
+        subject_img.shape[:3] == atlas_img.shape[:3]
+        and not np.array_equal(subj_ornt, atlas_ornt)
+    ):
+        ornt_xfm = nib.orientations.ornt_transform(atlas_ornt, subj_ornt)
+        return atlas_img.as_reoriented(ornt_xfm).get_fdata()
+
+    # Tier 2b: same family (or unknown), different resolution — use nilearn
     info = _check_image_space(
         subject_img, "subject_map",
         atlas_img, atlas_name,

@@ -275,8 +275,19 @@ def _load_4d_nifti(spec: AtlasSpec) -> Dict[str, np.ndarray]:
     return result
 
 
-def _load_label_nifti(spec: AtlasSpec) -> Dict[str, np.ndarray]:
-    """Load an integer-label NIfTI into a name→binary-weight dict.
+# Sentinel keys used by the compact label-atlas representation returned by
+# _load_label_nifti.  Callers that need to dispatch on atlas type check for
+# the presence of LABEL_DATA_KEY in the dict.
+LABEL_DATA_KEY = "__label_array__"
+LABEL_NAMES_KEY = "__label_names__"
+
+
+def _load_label_nifti(spec: AtlasSpec) -> Dict:
+    """Load an integer-label NIfTI in compact form (single array + name map).
+
+    Instead of expanding into N binary masks (which is O(N × voxels) memory),
+    the raw int32 label array and the index→name mapping are stored under
+    sentinel keys.  Callers detect this via ``LABEL_DATA_KEY``.
 
     Parameters
     ----------
@@ -284,26 +295,20 @@ def _load_label_nifti(spec: AtlasSpec) -> Dict[str, np.ndarray]:
 
     Returns
     -------
-    dict[str, np.ndarray]
-        Each unique non-zero integer label becomes a binary float32 mask.
-        Names come from *spec.label_file* or are auto-numbered as
-        ``region_XXXX``.
+    dict
+        ``{LABEL_DATA_KEY: int32 ndarray, LABEL_NAMES_KEY: {idx: name}}``.
     """
     img = nib.load(str(spec.source))
-    data = img.get_fdata()
+    data = img.get_fdata().astype(np.int32)
 
     labels: Dict[int, str] = {}
     if spec.label_file is not None:
         labels = _parse_label_file(spec.label_file)
 
-    unique_vals = sorted(v for v in np.unique(data).tolist() if v != 0)
-    result: Dict[str, np.ndarray] = {}
-    for val in unique_vals:
-        idx = int(val)
-        mask = (data == val).astype(np.float32)
-        region_name = labels.get(idx, f"region_{idx:04d}")
-        result[region_name] = mask
-    return result
+    unique_vals = sorted(int(v) for v in np.unique(data).tolist() if v != 0)
+    label_names = {idx: labels.get(idx, f"region_{idx:04d}") for idx in unique_vals}
+
+    return {LABEL_DATA_KEY: data, LABEL_NAMES_KEY: label_names}
 
 
 def load_atlas(spec: AtlasSpec) -> Dict[str, np.ndarray]:

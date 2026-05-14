@@ -5,18 +5,14 @@ from pathlib import Path
 from typing import Optional, Union
 
 import nibabel as nib
-from nilearn.image import resample_to_img
+import numpy as np
+from nilearn.image import resample_img
 
 from bcblib.tools.damage_profile._space import _apply_templateflow_warp
 from bcblib.tools.lesion_features._constants import TARGET_RES, TARGET_SPACE
 
 # MNI152NLin6Asym canonical shapes at 1 mm and 2 mm
 _MNI6_SHAPES = {
-    1: {(182, 218, 182), (193, 229, 193)},
-    2: {(91, 109, 91), (97, 115, 97)},
-}
-# MNI152NLin2009cAsym canonical shapes
-_MNI2009C_SHAPES = {
     1: {(182, 218, 182), (193, 229, 193)},
     2: {(91, 109, 91), (97, 115, 97)},
 }
@@ -108,27 +104,31 @@ def normalise_lesion_to_mni6(
     if in_mni6:
         if source_res == TARGET_RES:
             return img
-        # 2 mm → 1 mm nearest-neighbour resample
-        import templateflow.api as tflow
-        ref_paths = tflow.get(
-            TARGET_SPACE, resolution=TARGET_RES, suffix="T1w", desc=None, extension=".nii.gz"
+        # 2 mm → 1 mm: derive the 1 mm affine from the input's own affine by
+        # normalising the voxel size to 1 mm.  This preserves the input's
+        # orientation convention (radiological or neurological) exactly.
+        vox_size = np.sqrt((img.affine[:3, :3] ** 2).sum(axis=0))
+        target_affine = img.affine.copy()
+        target_affine[:3, :3] = img.affine[:3, :3] / vox_size
+        target_shape = tuple(np.round(np.array(img.shape[:3]) * vox_size).astype(int))
+        return resample_img(
+            img,
+            target_affine=target_affine,
+            target_shape=target_shape,
+            interpolation="nearest",
         )
-        ref_paths = [ref_paths] if not isinstance(ref_paths, list) else ref_paths
-        ref_img = nib.load(str(ref_paths[0]))
-        return resample_to_img(img, ref_img, interpolation="nearest")
 
     if in_mni2009c:
-        # warp to MNI6, then resample to 1 mm if needed
+        # warp to MNI6 1 mm (output inherits TemplateFlow's orientation
+        # convention, which may differ from the input).
         warped = _apply_templateflow_warp(img, source_space, TARGET_SPACE)
-        if source_res == TARGET_RES:
-            return warped
-        import templateflow.api as tflow
-        ref_paths = tflow.get(
-            TARGET_SPACE, resolution=TARGET_RES, suffix="T1w", desc=None, extension=".nii.gz"
-        )
-        ref_paths = [ref_paths] if not isinstance(ref_paths, list) else ref_paths
-        ref_img = nib.load(str(ref_paths[0]))
-        return resample_to_img(warped, ref_img, interpolation="nearest")
+        # restore input's orientation convention via nibabel reorientation
+        in_ornt = nib.io_orientation(img.affine)
+        out_ornt = nib.io_orientation(warped.affine)
+        if not np.array_equal(in_ornt, out_ornt):
+            ornt_xfm = nib.orientations.ornt_transform(out_ornt, in_ornt)
+            warped = warped.as_reoriented(ornt_xfm)
+        return warped
 
     raise ValueError(
         f"Unsupported source space '{source_space}'. "

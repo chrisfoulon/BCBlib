@@ -57,6 +57,7 @@ def run_disco_batch(
     disco_dir,
     bcbtoolkit: Path,
     ncores: Optional[int] = None,
+    tracks_dir: Optional[str] = None,
 ) -> Dict[str, Path]:
     """Run run_disco.sh in folder mode on a directory of lesion NIfTIs.
 
@@ -68,6 +69,9 @@ def run_disco_batch(
         Directory containing run_disco.sh.
     ncores : int or None
         Number of parallel cores.  If None, BCBToolKit uses its default.
+    tracks_dir : str or None
+        Path to the tractography atlas directory (-T flag).  Required when the
+        tracts are not in BCBToolKit's default location.
 
     Returns
     -------
@@ -89,6 +93,8 @@ def run_disco_batch(
         "-o", str(disco_dir),
         "-r", "_label-lesion_mask:_desc-disconnectome",
     ]
+    if tracks_dir is not None:
+        cmd += ["-T", str(tracks_dir)]
     if ncores is not None:
         cmd += ["-n", str(ncores)]
 
