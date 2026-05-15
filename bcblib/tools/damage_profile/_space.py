@@ -1,8 +1,11 @@
 """Space handling: template detection, resampling, and cross-template warps."""
 
+import warnings
+
 import numpy as np
 import nibabel as nib
 import templateflow.api as tflow
+from nilearn.image import resample_to_img as _resample_to_img
 from nitransforms.io.itk import ITKCompositeH5
 from nitransforms.nonlinear import DenseFieldTransform
 import nitransforms.resampling as ntres
@@ -154,12 +157,10 @@ def check_and_resample(
                 f"Space mismatch between subject and atlas '{atlas_name}': "
                 f"{info['issues']}"
             )
-        import warnings
         warnings.warn(
             f"Space mismatch for atlas '{atlas_name}'; resampling with nilearn. "
             f"Issues: {info['issues']}"
         )
 
-    from nilearn.image import resample_to_img as _resample_to_img
     resampled = _resample_to_img(atlas_img, subject_img, interpolation="nearest")
     return resampled.get_fdata()

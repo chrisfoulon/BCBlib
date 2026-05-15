@@ -1,6 +1,8 @@
 """Atlas download manager: preset registry, cache, and consent flow."""
 
 import os
+import shutil
+import warnings
 import zipfile
 import urllib.error
 import urllib.request
@@ -111,6 +113,10 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
         space="MNI152NLin6Asym",
         citation="Buckner et al. (2011) J Neurophysiol 106:2329-2344",
         label_file="atl-Buckner7.tsv",
+        label_url=(
+            "https://raw.githubusercontent.com/DiedrichsenLab/"
+            "cerebellar_atlases/master/Buckner_2011/atl-Buckner7.tsv"
+        ),
     ),
     "yeh_hcp1065": AtlasInfo(
         full_name="Yeh HCP1065 White Matter Atlas (64 tracts)",
@@ -224,6 +230,123 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
             "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S1_label.txt"
         ),
     ),
+    "schaefer_300_7n": AtlasInfo(
+        full_name="Schaefer 2018 Cortical Parcellation (300 parcels, 7 networks)",
+        url=(
+            "https://raw.githubusercontent.com/neurodata/neuroparc/master/"
+            "atlases/label/Human/Schaefer300_space-MNI152NLin6_res-1x1x1.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation="Schaefer et al. (2018) Cereb Cortex 28:3095-3114",
+        nifti_path="Schaefer300_space-MNI152NLin6_res-1x1x1.nii.gz",
+        label_file="Schaefer300_7N.tsv",
+        label_url=(
+            "https://raw.githubusercontent.com/templateflow/tpl-MNI152NLin6Asym/"
+            "master/tpl-MNI152NLin6Asym_atlas-Schaefer2018_desc-300Parcels7Networks_dseg.tsv"
+        ),
+    ),
+    "schaefer_300_tian_s1": AtlasInfo(
+        full_name="Schaefer 300 + Tian Subcortex S1 (316 regions)",
+        url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/MNIvolumetric/"
+            "Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S1_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation=(
+            "Tian et al. (2020) Science 369:eabb7547; "
+            "Schaefer et al. (2018) Cereb Cortex 28:3095-3114"
+        ),
+        nifti_path=(
+            "Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S1"
+            "_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        label_file="Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S1_label.txt",
+        label_url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/"
+            "Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S1_label.txt"
+        ),
+    ),
+    "schaefer_200_tian_s2": AtlasInfo(
+        full_name="Schaefer 200 + Tian Subcortex S2 (232 regions)",
+        url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/MNIvolumetric/"
+            "Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S2_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation=(
+            "Tian et al. (2020) Science 369:eabb7547; "
+            "Schaefer et al. (2018) Cereb Cortex 28:3095-3114"
+        ),
+        nifti_path=(
+            "Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S2"
+            "_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        label_file="Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S2_label.txt",
+        label_url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/"
+            "Schaefer2018_200Parcels_7Networks_order_Tian_Subcortex_S2_label.txt"
+        ),
+    ),
+    "schaefer_300_tian_s2": AtlasInfo(
+        full_name="Schaefer 300 + Tian Subcortex S2 (332 regions)",
+        url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/MNIvolumetric/"
+            "Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S2_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        size_mb=0.3,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation=(
+            "Tian et al. (2020) Science 369:eabb7547; "
+            "Schaefer et al. (2018) Cereb Cortex 28:3095-3114"
+        ),
+        nifti_path=(
+            "Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S2"
+            "_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        label_file="Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S2_label.txt",
+        label_url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/"
+            "Schaefer2018_300Parcels_7Networks_order_Tian_Subcortex_S2_label.txt"
+        ),
+    ),
+    "schaefer_400_tian_s2": AtlasInfo(
+        full_name="Schaefer 400 + Tian Subcortex S2 (432 regions)",
+        url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/MNIvolumetric/"
+            "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S2_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        size_mb=0.4,
+        fmt="label_nifti",
+        space="MNI152NLin6Asym",
+        citation=(
+            "Tian et al. (2020) Science 369:eabb7547; "
+            "Schaefer et al. (2018) Cereb Cortex 28:3095-3114"
+        ),
+        nifti_path=(
+            "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S2"
+            "_MNI152NLin6Asym_1mm.nii.gz"
+        ),
+        label_file="Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S2_label.txt",
+        label_url=(
+            "https://raw.githubusercontent.com/yetianmed/subcortex/master/"
+            "Group-Parcellation/3T/Cortex-Subcortex/"
+            "Schaefer2018_400Parcels_7Networks_order_Tian_Subcortex_S2_label.txt"
+        ),
+    ),
 }
 
 
@@ -286,16 +409,14 @@ def _download_atlas(info: AtlasInfo, dest: Path) -> None:
 
     # Download secondary label file if a separate URL is provided
     if info.label_url and info.label_file:
-        import warnings as _warnings
         try:
             urllib.request.urlretrieve(info.label_url, dest / info.label_file)
         except urllib.error.HTTPError as exc:
             bundled = Path(__file__).parent.parent.parent / "data" / info.label_file
             if bundled.exists():
-                import shutil as _shutil
-                _shutil.copy2(bundled, dest / info.label_file)
+                shutil.copy2(bundled, dest / info.label_file)
             else:
-                _warnings.warn(
+                warnings.warn(
                     f"Could not download label file for '{info.full_name}' "
                     f"(HTTP {exc.code}); atlas will be used without region names."
                 )
@@ -334,8 +455,6 @@ def get_preset_atlas(
     RuntimeError
         If the atlas cannot be resolved and the user declines the download.
     """
-    import os
-
     if name not in PRESET_ATLASES:
         available = ", ".join(PRESET_ATLASES.keys())
         raise KeyError(

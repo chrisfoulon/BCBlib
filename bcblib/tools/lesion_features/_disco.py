@@ -1,6 +1,7 @@
 """BCBToolKit run_disco.sh wrapper."""
 
 import os
+import re
 import subprocess
 import warnings
 from pathlib import Path
@@ -114,8 +115,6 @@ def run_disco_batch(
 
     outputs: Dict[str, Path] = {}
     for f in sorted(lesion_dir.glob("*_label-lesion_mask.nii.gz")):
-        # derive sub_id from filename
-        import re
         m = re.search(r'sub-([^_]+)', f.name)
         if m:
             sub_id = m.group(1)

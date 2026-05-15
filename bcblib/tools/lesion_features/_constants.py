@@ -6,10 +6,18 @@ DEFAULT_BCBTOOLKIT = "/home/chrisfoulon/neuro_apps/BCBToolKitLINUX/BCBToolKit"
 
 EBRAINS_ATLAS_SPECS = [
     "aal",
+    "buckner_7n",
+    "tian_s1",
+    "tian_s2",
     "schaefer_200_7n",
+    "schaefer_300_7n",
     "schaefer_400_7n",
     "schaefer_200_tian_s1",
+    "schaefer_300_tian_s1",
     "schaefer_400_tian_s1",
+    "schaefer_200_tian_s2",
+    "schaefer_300_tian_s2",
+    "schaefer_400_tian_s2",
 ]
 
 # FSL-bundled atlases — only available when $FSLDIR is set

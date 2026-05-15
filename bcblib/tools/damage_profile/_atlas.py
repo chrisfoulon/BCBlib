@@ -1,5 +1,7 @@
 """Atlas loading: format detection and region weight extraction."""
 
+import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -96,7 +98,6 @@ def _parse_fsl_xml_labels(text: str) -> Dict[int, str]:
     dict[int, str]
         Integer index → region name.
     """
-    import xml.etree.ElementTree as ET
     root = ET.fromstring(text)
     labels: Dict[int, str] = {}
     for el in root.iter("label"):
@@ -199,7 +200,6 @@ def _parse_alternating_labels(text: str) -> Dict[int, str]:
     dict[int, str]
         Integer index → region name.
     """
-    import re
     labels: Dict[int, str] = {}
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     i = 0
@@ -236,7 +236,6 @@ def _parse_label_file(label_file) -> Dict[int, str]:
     # Alternating (Tian style): second non-empty line is "index R G B A" — five
     # whitespace-separated integers.  A simple "\d+ \d+" would also match TSV
     # lines whose region name starts with a digit, so require 5 numeric fields.
-    import re
     if len(data_lines) >= 2 and re.match(r'^\d+(\s+\d+){4}\s*$', data_lines[1]):
         return _parse_alternating_labels(text)
     return _parse_text_labels(text)

@@ -404,7 +404,7 @@ class TestSpaceHandling:
         from bcblib.tools.damage_profile._space import check_and_resample
         img = self._make_img()
         with patch("bcblib.tools.damage_profile._space._check_image_space") as mock_check, \
-             patch("nilearn.image.resample_to_img") as mock_nilearn:
+             patch("bcblib.tools.damage_profile._space._resample_to_img") as mock_nilearn:
             mock_check.return_value = {"issues": []}
             result = check_and_resample(img, img, "test_atlas")
             mock_nilearn.assert_not_called()
@@ -418,7 +418,7 @@ class TestSpaceHandling:
         fake_nii = _make_nifti(resampled_fake)
 
         with patch("bcblib.tools.damage_profile._space._check_image_space") as mock_check, \
-             patch("nilearn.image.resample_to_img", return_value=fake_nii) as mock_nilearn:
+             patch("bcblib.tools.damage_profile._space._resample_to_img", return_value=fake_nii) as mock_nilearn:
             mock_check.return_value = {"issues": []}
             result = check_and_resample(subj, atlas, "test_atlas")
             mock_nilearn.assert_called_once()
@@ -446,7 +446,7 @@ class TestSpaceHandling:
         fake_nii = _make_nifti(np.zeros((5, 5, 5), dtype=np.float32))
 
         with patch("bcblib.tools.damage_profile._space._check_image_space") as mock_check, \
-             patch("nilearn.image.resample_to_img", return_value=fake_nii):
+             patch("bcblib.tools.damage_profile._space._resample_to_img", return_value=fake_nii):
             mock_check.return_value = {"issues": ["affine mismatch"]}
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
