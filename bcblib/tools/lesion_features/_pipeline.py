@@ -9,6 +9,7 @@ from bcblib.tools.lesion_features._bids import (
     build_lf_csv_path,
     build_lf_tsv_path,
     iter_bids_lesions,
+    parse_bids_entities,
 )
 from bcblib.tools.lesion_features._preprocess import preprocess_one
 
@@ -64,6 +65,7 @@ def preprocess_batch(
     bids_dir,
     prep_dir,
     force: bool = False,
+    suffix: str = "*_label-lesion_mask.nii.gz",
 ) -> Dict[str, Path]:
     """Normalise all lesions in a BIDS directory to MNI152NLin6Asym 1 mm.
 
@@ -74,22 +76,28 @@ def preprocess_batch(
         Output BIDS derivatives directory.
     force : bool
         Reprocess even if output already exists.
+    suffix : str
+        Glob pattern for lesion mask filenames (passed to ``iter_bids_lesions``).
 
     Returns
     -------
     dict[str, Path]
-        sub_id → normalised lesion path.
+        ``sub_id[_desc-X]`` → normalised lesion path.
     """
     from bcblib.tools.lesion_features._bids import build_prep_path
 
     results: Dict[str, Path] = {}
-    for sub_id, ses_id, lesion_path in iter_bids_lesions(bids_dir):
-        out_path = build_prep_path(prep_dir, sub_id, ses_id, "mask", "label-lesion")
+    for sub_id, ses_id, lesion_path in iter_bids_lesions(bids_dir, suffix=suffix):
+        lesion_desc = parse_bids_entities(lesion_path).get("desc")
+        out_path = build_prep_path(
+            prep_dir, sub_id, ses_id, "mask", "label-lesion", lesion_desc=lesion_desc
+        )
+        key = sub_id + (f"_desc-{lesion_desc}" if lesion_desc else "")
         if out_path.exists() and not force:
-            results[sub_id] = out_path
+            results[key] = out_path
             continue
         out_path = preprocess_one(lesion_path, prep_dir, sub_id, ses_id)
-        results[sub_id] = out_path
+        results[key] = out_path
     return results
 
 
@@ -100,6 +108,7 @@ def extract_features_one(
     disco_path,
     atlases,
     output_dir,
+    lesion_desc: Optional[str] = None,
 ) -> Dict[str, Path]:
     """Extract lesion and disconnectome features for one subject.
 
@@ -107,6 +116,10 @@ def extract_features_one(
     ----------
     atlases : list[AtlasSpec]
     output_dir : str or Path
+    lesion_desc : str or None
+        Value of the ``desc-`` entity from the lesion filename (e.g. ``'core'``,
+        ``'edema'``).  Propagated into output filenames to distinguish multiple
+        lesion types per subject (glioma).
 
     Returns
     -------
@@ -122,24 +135,23 @@ def extract_features_one(
             continue
         dp_results = damage_profile(map_path, atlases)
 
-        # write per-atlas CSVs (exclude the reserved _subject_map_stats key)
         for atlas_spec in atlases:
             df = dp_results.get(atlas_spec.name)
             if df is None:
                 continue
             csv_path = build_lf_csv_path(
                 output_dir, sub_id, ses_id, TARGET_SPACE,
-                variant, atlas_spec.name,
+                variant, atlas_spec.name, lesion_desc=lesion_desc,
             )
             csv_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(str(csv_path), index=False)
             written[f"{variant}_{atlas_spec.name}_csv"] = csv_path
 
-        # write subject map stats TSV
         stats_df = dp_results.get("_subject_map_stats")
         if stats_df is not None:
             tsv_path = build_lf_tsv_path(
-                output_dir, sub_id, ses_id, TARGET_SPACE, variant
+                output_dir, sub_id, ses_id, TARGET_SPACE, variant,
+                lesion_desc=lesion_desc,
             )
             tsv_path.parent.mkdir(parents=True, exist_ok=True)
             stats_df.to_csv(str(tsv_path), sep="\t", index=False)
@@ -195,24 +207,39 @@ def _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force):
 
 
 def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force):
-    """Locate lesion + disconnectome pair and run extract_features_one."""
+    """Locate all lesion + disconnectome pairs and run extract_features_one for each."""
     lesion_files = sorted(anat_dir.glob("*_label-lesion_mask.nii.gz"))
     if not lesion_files:
         return
-    lesion_path = lesion_files[0]
 
-    disco_files = sorted(anat_dir.glob("*_desc-disconnectome.nii.gz"))
-    if not disco_files:
-        warnings.warn(
-            f"No disconnectome found for sub-{sub_id} in {anat_dir}; skipping.",
-            RuntimeWarning,
-            stacklevel=3,
+    for lesion_path in lesion_files:
+        lesion_desc = parse_bids_entities(lesion_path).get("desc")
+
+        # find the matching disconnectome: desc-X-disconnectome for glioma, else desc-disconnectome
+        if lesion_desc:
+            disco_pattern = f"*_desc-{lesion_desc}-disconnectome.nii.gz"
+        else:
+            disco_pattern = "*_desc-disconnectome.nii.gz"
+        disco_files = sorted(anat_dir.glob(disco_pattern))
+
+        if not disco_files:
+            warnings.warn(
+                f"No disconnectome found for sub-{sub_id}"
+                + (f" desc-{lesion_desc}" if lesion_desc else "")
+                + f" in {anat_dir}; skipping.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            continue
+        disco_path = disco_files[0]
+
+        key = (
+            f"{sub_id}"
+            + (f"_ses-{ses_id}" if ses_id else "")
+            + (f"_desc-{lesion_desc}" if lesion_desc else "")
         )
-        return
-    disco_path = disco_files[0]
-
-    key = f"{sub_id}" + (f"_ses-{ses_id}" if ses_id else "")
-    written = extract_features_one(
-        sub_id, ses_id, lesion_path, disco_path, atlases, output_dir
-    )
-    results[key] = written
+        written = extract_features_one(
+            sub_id, ses_id, lesion_path, disco_path, atlases, output_dir,
+            lesion_desc=lesion_desc,
+        )
+        results[key] = written

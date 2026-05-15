@@ -153,9 +153,10 @@ def preprocess_one(lesion_path, prep_dir, sub: str, ses: Optional[str] = None) -
     Path
         Output file path.
     """
-    from bcblib.tools.lesion_features._bids import build_prep_path
+    from bcblib.tools.lesion_features._bids import build_prep_path, parse_bids_entities
 
     lesion_path = Path(lesion_path)
+    lesion_desc = parse_bids_entities(lesion_path).get("desc")
     space = extract_space_from_filename(lesion_path)
     res = extract_resolution_from_filename(lesion_path)
 
@@ -168,7 +169,7 @@ def preprocess_one(lesion_path, prep_dir, sub: str, ses: Optional[str] = None) -
 
     norm = normalise_lesion_to_mni6(img, space, res)
 
-    out_path = build_prep_path(prep_dir, sub, ses, "mask", "label-lesion")
+    out_path = build_prep_path(prep_dir, sub, ses, "mask", "label-lesion", lesion_desc=lesion_desc)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     nib.save(norm, str(out_path))
     return out_path

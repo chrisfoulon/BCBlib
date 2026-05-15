@@ -46,6 +46,14 @@ def _build_parser():
         ),
     )
     p.add_argument(
+        "--lesion-suffix", default="*_label-lesion_mask.nii.gz", metavar="GLOB",
+        help=(
+            "Glob pattern for lesion mask filenames "
+            "(default: '*_label-lesion_mask.nii.gz'). "
+            "Override if your project uses a different naming convention."
+        ),
+    )
+    p.add_argument(
         "--dry-run", action="store_true",
         help="Print plan without executing",
     )
@@ -66,7 +74,7 @@ def main(argv=None):
 
     if args.dry_run:
         from bcblib.tools.lesion_features._bids import iter_bids_lesions
-        subjects = list(iter_bids_lesions(bids_dir))
+        subjects = list(iter_bids_lesions(bids_dir, suffix=args.lesion_suffix))
         print(f"Would preprocess {len(subjects)} lesion(s):")
         for sub_id, ses_id, path in subjects:
             ses_part = f" ses-{ses_id}" if ses_id else ""
@@ -77,7 +85,7 @@ def main(argv=None):
     from bcblib.tools.lesion_features._disco import find_bcbtoolkit, run_disco_batch
 
     print(f"Preprocessing lesions → {output_dir}")
-    results = preprocess_batch(bids_dir, output_dir, force=force)
+    results = preprocess_batch(bids_dir, output_dir, force=force, suffix=args.lesion_suffix)
     print(f"Preprocessed {len(results)} subject(s).")
 
     try:
@@ -97,9 +105,11 @@ def main(argv=None):
     disco_flat = output_dir / "_tmp_disco_flat"
     sub_map = {}  # filename_stem → (sub_id, ses_id, anat_dir)
     try:
+        from bcblib.tools.lesion_features._disco import predict_disco_output
         for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
-            stem = lesion_path.name.replace("_label-lesion_mask.nii.gz", "_desc-disconnectome")
+            expected = predict_disco_output(lesion_path, disco_flat)
+            stem = expected.name.replace(".nii.gz", "")
             sub_map[stem] = (sub_id, ses_id, lesion_path.parent)
 
         n = len(list(lesion_dir.glob("*.nii.gz")))
@@ -112,7 +122,7 @@ def main(argv=None):
 
         # Move disconnectomes into the per-subject BIDS anat directories
         moved = 0
-        for disco_file in sorted(disco_flat.glob("*_desc-disconnectome.nii.gz")):
+        for disco_file in sorted(disco_flat.glob("*disconnectome.nii.gz")):
             stem = disco_file.name.replace(".nii.gz", "")
             if stem in sub_map:
                 _, _, anat_dir = sub_map[stem]

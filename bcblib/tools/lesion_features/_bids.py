@@ -41,6 +41,7 @@ def build_lf_csv_path(
     space: str,
     feature_variant: str,
     atlas_name: str,
+    lesion_desc: Optional[str] = None,
 ) -> Path:
     """Build output path for a lesion-features CSV file.
 
@@ -48,9 +49,11 @@ def build_lf_csv_path(
     -------
     sub-001_space-MNI152NLin6Asym_LF-lesion_atlas-JHU.csv
     sub-001_ses-01_space-MNI152NLin6Asym_LF-disconnectome_atlas-JHU.csv
+    sub-001_space-MNI152NLin6Asym_LF-lesion-core_atlas-JHU.csv  (glioma desc-core)
     """
     ses_part = f"_ses-{ses}" if ses else ""
-    name = f"sub-{sub}{ses_part}_space-{space}_LF-{feature_variant}_atlas-{atlas_name}.csv"
+    variant_str = f"{feature_variant}-{lesion_desc}" if lesion_desc else feature_variant
+    name = f"sub-{sub}{ses_part}_space-{space}_LF-{variant_str}_atlas-{atlas_name}.csv"
     sub_dir = Path(output_dir) / f"sub-{sub}"
     if ses:
         sub_dir = sub_dir / f"ses-{ses}"
@@ -62,16 +65,19 @@ def build_lf_tsv_path(
     sub: str,
     ses: Optional[str],
     space: str,
-    desc: str,
+    map_type: str,
+    lesion_desc: Optional[str] = None,
 ) -> Path:
     """Build output path for a lesion-features mapstats TSV.
 
     Example
     -------
     sub-001_space-MNI152NLin6Asym_desc-lesion_mapstats.tsv
+    sub-001_space-MNI152NLin6Asym_desc-core-lesion_mapstats.tsv  (glioma desc-core)
     """
     ses_part = f"_ses-{ses}" if ses else ""
-    name = f"sub-{sub}{ses_part}_space-{space}_desc-{desc}_mapstats.tsv"
+    desc_val = f"{lesion_desc}-{map_type}" if lesion_desc else map_type
+    name = f"sub-{sub}{ses_part}_space-{space}_desc-{desc_val}_mapstats.tsv"
     sub_dir = Path(output_dir) / f"sub-{sub}"
     if ses:
         sub_dir = sub_dir / f"ses-{ses}"
@@ -84,6 +90,7 @@ def build_prep_path(
     ses: Optional[str],
     suffix: str,
     label_or_desc: str,
+    lesion_desc: Optional[str] = None,
 ) -> Path:
     """Build output path for a preprocessed NIfTI in the prep derivatives.
 
@@ -93,18 +100,23 @@ def build_prep_path(
         BIDS suffix, e.g. ``'mask'``.
     label_or_desc : str
         Either ``'label-lesion'`` or ``'desc-disconnectome'`` (full entity string).
+    lesion_desc : str or None
+        Value of the ``desc-`` entity from the source lesion filename (e.g.
+        ``'core'``, ``'edema'``).  Included before ``label_or_desc`` when set.
 
     Returns
     -------
     Path
         e.g. ``prep_dir/sub-001/anat/sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz``
+        or ``prep_dir/sub-001/anat/sub-001_space-MNI152NLin6Asym_res-1_desc-core_label-lesion_mask.nii.gz``
     """
     from bcblib.tools.lesion_features._constants import TARGET_SPACE, TARGET_RES
     ses_part = f"_ses-{ses}" if ses else ""
+    desc_part = f"_desc-{lesion_desc}" if lesion_desc else ""
     name = (
         f"sub-{sub}{ses_part}"
         f"_space-{TARGET_SPACE}_res-{TARGET_RES}"
-        f"_{label_or_desc}_{suffix}.nii.gz"
+        f"{desc_part}_{label_or_desc}_{suffix}.nii.gz"
     )
     sub_dir = Path(prep_dir) / f"sub-{sub}"
     if ses:
@@ -112,27 +124,34 @@ def build_prep_path(
     return sub_dir / "anat" / name
 
 
-def iter_bids_lesions(bids_dir) -> Iterator[Tuple[str, Optional[str], Path]]:
+def iter_bids_lesions(
+    bids_dir,
+    suffix: str = "*_label-lesion_mask.nii.gz",
+) -> Iterator[Tuple[str, Optional[str], Path]]:
     """Yield ``(sub_id, ses_id_or_None, lesion_path)`` for every lesion mask.
 
-    Searches ``bids_dir/sub-*/[ses-*/]anat/*_label-lesion_mask.nii.gz``.
+    Parameters
+    ----------
+    bids_dir : str or Path
+    suffix : str
+        Glob pattern for lesion mask filenames.  Default matches the standard
+        ``*_label-lesion_mask.nii.gz`` convention; override if your project
+        uses a different naming (e.g. ``*_label-tumor_mask.nii.gz``).
     """
     bids_root = Path(bids_dir)
     for sub_dir in sorted(bids_root.glob("sub-*")):
         if not sub_dir.is_dir():
             continue
         sub_id = sub_dir.name[4:]  # strip "sub-"
-        # flat layout (no session)
         anat_dir = sub_dir / "anat"
         if anat_dir.is_dir():
-            for f in sorted(anat_dir.glob("*_label-lesion_mask.nii.gz")):
+            for f in sorted(anat_dir.glob(suffix)):
                 yield sub_id, None, f
-        # session layout
         for ses_dir in sorted(sub_dir.glob("ses-*")):
             if not ses_dir.is_dir():
                 continue
             ses_id = ses_dir.name[4:]  # strip "ses-"
             anat_dir = ses_dir / "anat"
             if anat_dir.is_dir():
-                for f in sorted(anat_dir.glob("*_label-lesion_mask.nii.gz")):
+                for f in sorted(anat_dir.glob(suffix)):
                     yield sub_id, ses_id, f

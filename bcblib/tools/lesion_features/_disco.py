@@ -41,15 +41,24 @@ def find_bcbtoolkit(path_hint: Optional[str] = None) -> Path:
 def predict_disco_output(input_path, disco_dir) -> Path:
     """Return the expected disconnectome output path for a given lesion input.
 
-    Applies the rename ``_label-lesion_mask`` → ``_desc-disconnectome``.
+    For plain lesions: ``_label-lesion_mask`` → ``_desc-disconnectome``.
+    For desc-labelled lesions (e.g. glioma): ``_desc-core_label-lesion_mask``
+    → ``_desc-core-disconnectome`` (merged into one desc entity).
     """
     stem = Path(input_path).name
-    # strip .nii or .nii.gz
     if stem.endswith(".nii.gz"):
         stem = stem[:-7]
     elif stem.endswith(".nii"):
         stem = stem[:-4]
-    stem = stem.replace("_label-lesion_mask", "_desc-disconnectome")
+    m = re.search(r'_desc-([^_]+)_label-lesion_mask$', stem)
+    if m:
+        stem = re.sub(
+            r'_desc-[^_]+_label-lesion_mask$',
+            f'_desc-{m.group(1)}-disconnectome',
+            stem,
+        )
+    else:
+        stem = stem.replace("_label-lesion_mask", "_desc-disconnectome")
     return Path(disco_dir) / (stem + ".nii.gz")
 
 

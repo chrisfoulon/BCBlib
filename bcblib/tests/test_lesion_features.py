@@ -84,6 +84,12 @@ class TestBidsUtils:
         assert "ses-01" in p.name
         assert "ses-01" in str(p.parent)
 
+    def test_build_lf_csv_path_with_lesion_desc(self):
+        from bcblib.tools.lesion_features._bids import build_lf_csv_path
+        p = build_lf_csv_path("/out", "001", None, "MNI152NLin6Asym", "lesion", "aal",
+                               lesion_desc="core")
+        assert p.name == "sub-001_space-MNI152NLin6Asym_LF-lesion-core_atlas-aal.csv"
+
     def test_build_lf_tsv_path(self):
         from bcblib.tools.lesion_features._bids import build_lf_tsv_path
         p = build_lf_tsv_path("/out", "001", None, "MNI152NLin6Asym", "lesion")
@@ -93,6 +99,12 @@ class TestBidsUtils:
         from bcblib.tools.lesion_features._bids import build_lf_tsv_path
         p = build_lf_tsv_path("/out", "001", "02", "MNI152NLin6Asym", "disconnectome")
         assert "ses-02" in p.name
+
+    def test_build_lf_tsv_path_with_lesion_desc(self):
+        from bcblib.tools.lesion_features._bids import build_lf_tsv_path
+        p = build_lf_tsv_path("/out", "001", None, "MNI152NLin6Asym", "lesion",
+                               lesion_desc="edema")
+        assert p.name == "sub-001_space-MNI152NLin6Asym_desc-edema-lesion_mapstats.tsv"
 
     def test_build_prep_path(self):
         from bcblib.tools.lesion_features._bids import build_prep_path
@@ -106,6 +118,11 @@ class TestBidsUtils:
         p = build_prep_path("/prep", "001", "01", "mask", "label-lesion")
         assert "ses-01" in p.name
         assert p.parent.parent.name == "ses-01"
+
+    def test_build_prep_path_with_lesion_desc(self):
+        from bcblib.tools.lesion_features._bids import build_prep_path
+        p = build_prep_path("/prep", "001", None, "mask", "label-lesion", lesion_desc="core")
+        assert p.name == "sub-001_space-MNI152NLin6Asym_res-1_desc-core_label-lesion_mask.nii.gz"
 
     def test_iter_bids_lesions_flat(self, tmp_path):
         from bcblib.tools.lesion_features._bids import iter_bids_lesions
@@ -142,6 +159,37 @@ class TestBidsUtils:
         assert len(results) == 3
         sub_ids = [r[0] for r in results]
         assert sorted(sub_ids) == ["001", "002", "003"]
+
+    def test_iter_bids_lesions_custom_suffix(self, tmp_path):
+        from bcblib.tools.lesion_features._bids import iter_bids_lesions
+        anat = tmp_path / "sub-001" / "anat"
+        anat.mkdir(parents=True)
+        (anat / "sub-001_space-MNI_label-tumor_mask.nii.gz").touch()
+        results = list(iter_bids_lesions(tmp_path, suffix="*_label-tumor_mask.nii.gz"))
+        assert len(results) == 1
+
+    def test_iter_bids_lesions_multiple_desc(self, tmp_path):
+        from bcblib.tools.lesion_features._bids import iter_bids_lesions
+        anat = tmp_path / "sub-001" / "anat"
+        anat.mkdir(parents=True)
+        for desc in ("core", "edema", "necrosis"):
+            (anat / f"sub-001_space-MNI_desc-{desc}_label-lesion_mask.nii.gz").touch()
+        results = list(iter_bids_lesions(tmp_path))
+        assert len(results) == 3
+
+    def test_predict_disco_output_plain(self):
+        from bcblib.tools.lesion_features._disco import predict_disco_output
+        p = predict_disco_output(
+            "sub-001_space-MNI_res-1_label-lesion_mask.nii.gz", "/out"
+        )
+        assert p.name == "sub-001_space-MNI_res-1_desc-disconnectome.nii.gz"
+
+    def test_predict_disco_output_with_desc(self):
+        from bcblib.tools.lesion_features._disco import predict_disco_output
+        p = predict_disco_output(
+            "sub-001_space-MNI_res-1_desc-core_label-lesion_mask.nii.gz", "/out"
+        )
+        assert p.name == "sub-001_space-MNI_res-1_desc-core-disconnectome.nii.gz"
 
 
 # ---------------------------------------------------------------------------
