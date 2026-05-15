@@ -290,10 +290,15 @@ def _download_atlas(info: AtlasInfo, dest: Path) -> None:
         try:
             urllib.request.urlretrieve(info.label_url, dest / info.label_file)
         except urllib.error.HTTPError as exc:
-            _warnings.warn(
-                f"Could not download label file for '{info.full_name}' "
-                f"(HTTP {exc.code}); atlas will be used without region names."
-            )
+            bundled = Path(__file__).parent.parent.parent / "data" / info.label_file
+            if bundled.exists():
+                import shutil as _shutil
+                _shutil.copy2(bundled, dest / info.label_file)
+            else:
+                _warnings.warn(
+                    f"Could not download label file for '{info.full_name}' "
+                    f"(HTTP {exc.code}); atlas will be used without region names."
+                )
 
 
 def get_preset_atlas(

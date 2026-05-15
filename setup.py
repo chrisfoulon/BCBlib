@@ -23,6 +23,8 @@ setup(
     package_data={
         # If any package contains *.txt or *.rst files, include them:
         "": ["*.txt", "*.rst"],
+        # Bundled atlas label files
+        "bcblib.data": ["*.txt"],
         # Include all the executables from bin
         "Data": ["*"],
         "bash": ["*"],
