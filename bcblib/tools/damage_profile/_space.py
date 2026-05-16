@@ -145,22 +145,27 @@ def check_and_resample(
         ornt_xfm = nib.orientations.ornt_transform(atlas_ornt, subj_ornt)
         return atlas_img.as_reoriented(ornt_xfm).get_fdata()
 
-    # Tier 2b: same family (or unknown), different resolution — use nilearn
-    info = _check_image_space(
-        subject_img, "subject_map",
-        atlas_img, atlas_name,
-        on_mismatch=on_space_mismatch,
-    )
-    if info.get("issues"):
-        if on_space_mismatch == "error":
-            raise ValueError(
-                f"Space mismatch between subject and atlas '{atlas_name}': "
-                f"{info['issues']}"
-            )
-        warnings.warn(
-            f"Space mismatch for atlas '{atlas_name}'; resampling with nilearn. "
-            f"Issues: {info['issues']}"
+    # Tier 2b: same family (or unknown), different resolution / FOV — use nilearn.
+    # _check_image_space always raises on shape mismatch, so only invoke it when
+    # shapes are equal (to catch affine / orientation-only mismatches).  When
+    # shapes differ — e.g. a cerebellar atlas with a smaller FOV — go straight
+    # to nilearn which handles same-space different-FOV resampling via the affine.
+    if subject_img.shape[:3] == atlas_img.shape[:3]:
+        info = _check_image_space(
+            subject_img, "subject_map",
+            atlas_img, atlas_name,
+            on_mismatch=on_space_mismatch,
         )
+        if info.get("issues"):
+            if on_space_mismatch == "error":
+                raise ValueError(
+                    f"Space mismatch between subject and atlas '{atlas_name}': "
+                    f"{info['issues']}"
+                )
+            warnings.warn(
+                f"Space mismatch for atlas '{atlas_name}'; resampling with nilearn. "
+                f"Issues: {info['issues']}"
+            )
 
     resampled = _resample_to_img(atlas_img, subject_img, interpolation="nearest")
     return resampled.get_fdata()
