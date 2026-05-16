@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+import sys
 import warnings
 from pathlib import Path
 from typing import Dict, Optional
@@ -116,10 +117,11 @@ def run_disco_batch(
     if tmpdir is not None:
         cmd += ["-w", str(tmpdir)]
 
-    result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
+    proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+    returncode = proc.wait()
+    if returncode != 0:
         raise RuntimeError(
-            f"run_disco.sh failed with exit code {result.returncode}."
+            f"run_disco.sh failed with exit code {returncode}."
         )
 
     outputs: Dict[str, Path] = {}

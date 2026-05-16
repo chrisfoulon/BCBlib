@@ -11,11 +11,19 @@ from nilearn.image import resample_img
 from bcblib.tools.damage_profile._space import _apply_templateflow_warp
 from bcblib.tools.lesion_features._constants import TARGET_RES, TARGET_SPACE
 
-# MNI152NLin6Asym canonical shapes at 1 mm and 2 mm
+# MNI152NLin6Asym canonical shapes at 1 mm and 2 mm.
+# (181, 217, 181) is the SPM12 MNI152 1 mm template — same affine as FSL's
+# (182, 218, 182) but one voxel smaller FOV on each axis.  It is listed here
+# for resolution detection only; normalise_lesion_to_mni6 resamples it to the
+# canonical FSL grid before saving so that run_disco.sh and atlas lookups both
+# see the expected (182, 218, 182) volume.
 _MNI6_SHAPES = {
-    1: {(182, 218, 182), (193, 229, 193)},
+    1: {(182, 218, 182), (193, 229, 193), (181, 217, 181)},
     2: {(91, 109, 91), (97, 115, 97)},
 }
+
+# Canonical FSL MNI152NLin6Asym 1 mm output shape.
+_MNI6_CANONICAL_SHAPE = (182, 218, 182)
 
 _MNI6_ALIASES = {
     "MNI152NLin6Asym", "MNI152NLin6", "MNI6",
@@ -103,7 +111,19 @@ def normalise_lesion_to_mni6(
 
     if in_mni6:
         if source_res == TARGET_RES:
-            return img
+            if img.shape[:3] == _MNI6_CANONICAL_SHAPE:
+                return img
+            # Non-canonical FOV (e.g. SPM12 181×217×181).  SPM and FSL MNI
+            # share the same affine origin, so padding to (182, 218, 182) with
+            # the same affine is exact — no interpolation error, just one extra
+            # zero-filled voxel at each boundary.  Required so that run_disco.sh
+            # and atlas lookups both see the expected canonical grid.
+            return resample_img(
+                img,
+                target_affine=img.affine,
+                target_shape=_MNI6_CANONICAL_SHAPE,
+                interpolation="nearest",
+            )
         # 2 mm → 1 mm: derive the 1 mm affine from the input's own affine by
         # normalising the voxel size to 1 mm.  This preserves the input's
         # orientation convention (radiological or neurological) exactly.

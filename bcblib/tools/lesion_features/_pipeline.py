@@ -1,5 +1,6 @@
 """Orchestration pipelines for preprocessing and feature extraction."""
 
+import time
 import warnings
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -9,6 +10,7 @@ from bcblib.tools.lesion_features._bids import (
     build_lf_csv_path,
     build_lf_tsv_path,
     iter_bids_lesions,
+    iter_flat_lesions,
     parse_bids_entities,
 )
 from bcblib.tools.lesion_features._preprocess import preprocess_one
@@ -66,18 +68,26 @@ def preprocess_batch(
     prep_dir,
     force: bool = False,
     suffix: str = "*_label-lesion_mask.nii.gz",
+    flat: bool = False,
 ) -> Dict[str, Path]:
-    """Normalise all lesions in a BIDS directory to MNI152NLin6Asym 1 mm.
+    """Normalise all lesions to MNI152NLin6Asym 1 mm.
 
     Parameters
     ----------
     bids_dir : str or Path
+        Input directory.  With ``flat=False`` (default) this must follow BIDS
+        conventions (``sub-*/anat/``).  With ``flat=True`` lesion files are
+        expected directly under ``sub-*/`` with no ``anat/`` subdirectory.
     prep_dir : str or Path
         Output BIDS derivatives directory.
     force : bool
         Reprocess even if output already exists.
     suffix : str
-        Glob pattern for lesion mask filenames (passed to ``iter_bids_lesions``).
+        Glob pattern for lesion mask filenames.
+    flat : bool
+        When ``True``, use :func:`iter_flat_lesions` instead of
+        :func:`iter_bids_lesions`.  Suited for pipeline outputs such as
+        StrokeBrain that place files directly under ``sub-*/``.
 
     Returns
     -------
@@ -86,18 +96,40 @@ def preprocess_batch(
     """
     from bcblib.tools.lesion_features._bids import build_prep_path
 
+    iterator = (
+        iter_flat_lesions(bids_dir, suffix=suffix)
+        if flat
+        else iter_bids_lesions(bids_dir, suffix=suffix)
+    )
+
+    subjects = list(iterator)
+    n_total = len(subjects)
+
     results: Dict[str, Path] = {}
-    for sub_id, ses_id, lesion_path in iter_bids_lesions(bids_dir, suffix=suffix):
+    for i, (sub_id, ses_id, lesion_path) in enumerate(subjects, 1):
+        ses_part = f"_ses-{ses_id}" if ses_id else ""
+        label = f"sub-{sub_id}{ses_part}"
         lesion_desc = parse_bids_entities(lesion_path).get("desc")
+        if lesion_desc:
+            label += f" desc-{lesion_desc}"
+
         out_path = build_prep_path(
             prep_dir, sub_id, ses_id, "mask", "label-lesion", lesion_desc=lesion_desc
         )
         key = sub_id + (f"_desc-{lesion_desc}" if lesion_desc else "")
+
         if out_path.exists() and not force:
+            print(f"  [{i}/{n_total}] {label} — skipped (already exists)")
             results[key] = out_path
             continue
+
+        print(f"  [{i}/{n_total}] {label} ...", end="", flush=True)
+        t0 = time.perf_counter()
         out_path = preprocess_one(lesion_path, prep_dir, sub_id, ses_id)
+        elapsed = time.perf_counter() - t0
+        print(f" done ({elapsed:.1f}s)")
         results[key] = out_path
+
     return results
 
 
@@ -181,13 +213,23 @@ def extract_features_batch(
         sub_id → dict of written file paths.
     """
     prep_dir = Path(prep_dir)
+
+    sub_dirs = sorted(d for d in prep_dir.glob("sub-*") if d.is_dir())
+    n_total = len(sub_dirs)
     results: Dict[str, Dict] = {}
 
-    for sub_dir in sorted(prep_dir.glob("sub-*")):
-        if not sub_dir.is_dir():
-            continue
+    for i, sub_dir in enumerate(sub_dirs, 1):
         sub_id = sub_dir.name[4:]
+        print(f"  [{i}/{n_total}] sub-{sub_id} ...", end="", flush=True)
+        t0 = time.perf_counter()
+        before = len(results)
         _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force)
+        elapsed = time.perf_counter() - t0
+        n_written = len(results) - before
+        if n_written:
+            print(f" done ({elapsed:.1f}s, {n_written} file(s))")
+        else:
+            print(f" skipped ({elapsed:.1f}s)")
 
     return results
 

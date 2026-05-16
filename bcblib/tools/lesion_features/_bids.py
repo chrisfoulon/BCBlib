@@ -155,3 +155,28 @@ def iter_bids_lesions(
             if anat_dir.is_dir():
                 for f in sorted(anat_dir.glob(suffix)):
                     yield sub_id, ses_id, f
+
+
+def iter_flat_lesions(
+    root_dir,
+    suffix: str = "*_lesion_mask.nii.gz",
+) -> Iterator[Tuple[str, Optional[str], Path]]:
+    """Yield ``(sub_id, None, lesion_path)`` for non-BIDS flat directories.
+
+    Expects lesion files directly under ``sub-*/`` with no ``anat/``
+    subdirectory — the layout produced by pipelines such as StrokeBrain.
+
+    Parameters
+    ----------
+    root_dir : str or Path
+    suffix : str
+        Glob pattern for lesion mask filenames inside each ``sub-*/``
+        directory.  Default matches ``*_lesion_mask.nii.gz``.
+    """
+    root = Path(root_dir)
+    for sub_dir in sorted(root.glob("sub-*")):
+        if not sub_dir.is_dir():
+            continue
+        sub_id = sub_dir.name[4:]  # strip "sub-"
+        for f in sorted(sub_dir.glob(suffix)):
+            yield sub_id, None, f

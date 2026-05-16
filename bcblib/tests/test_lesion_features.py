@@ -177,6 +177,76 @@ class TestBidsUtils:
         results = list(iter_bids_lesions(tmp_path))
         assert len(results) == 3
 
+    def test_iter_flat_lesions_single_subject(self, tmp_path):
+        from bcblib.tools.lesion_features._bids import iter_flat_lesions
+        sub_dir = tmp_path / "sub-010"
+        sub_dir.mkdir(parents=True)
+        f = sub_dir / "mni_sub-010_lesion_mask.nii.gz"
+        f.touch()
+        results = list(iter_flat_lesions(tmp_path))
+        assert len(results) == 1
+        sub_id, ses_id, path = results[0]
+        assert sub_id == "010"
+        assert ses_id is None
+        assert path == f
+
+    def test_iter_flat_lesions_multiple_subjects(self, tmp_path):
+        from bcblib.tools.lesion_features._bids import iter_flat_lesions
+        for sub in ("001", "002", "003"):
+            d = tmp_path / f"sub-{sub}"
+            d.mkdir()
+            (d / f"mni_sub-{sub}_lesion_mask.nii.gz").touch()
+        results = list(iter_flat_lesions(tmp_path))
+        assert len(results) == 3
+        assert sorted(r[0] for r in results) == ["001", "002", "003"]
+
+    def test_iter_flat_lesions_ignores_anat_subdir(self, tmp_path):
+        from bcblib.tools.lesion_features._bids import iter_flat_lesions
+        # File in anat/ should NOT be found by the flat iterator
+        anat = tmp_path / "sub-001" / "anat"
+        anat.mkdir(parents=True)
+        (anat / "sub-001_label-lesion_mask.nii.gz").touch()
+        results = list(iter_flat_lesions(tmp_path))
+        assert len(results) == 0
+
+    def test_iter_flat_lesions_custom_suffix(self, tmp_path):
+        from bcblib.tools.lesion_features._bids import iter_flat_lesions
+        sub_dir = tmp_path / "sub-001"
+        sub_dir.mkdir()
+        (sub_dir / "mni_sub-001_lesion_mask.nii.gz").touch()
+        (sub_dir / "mni_sub-001_other.nii.gz").touch()
+        results = list(iter_flat_lesions(tmp_path, suffix="*_lesion_mask.nii.gz"))
+        assert len(results) == 1
+        assert results[0][2].name == "mni_sub-001_lesion_mask.nii.gz"
+
+    def test_preprocess_batch_flat_mode(self, tmp_path):
+        import nibabel as nib
+        import numpy as np
+        from unittest.mock import patch
+        from bcblib.tools.lesion_features._pipeline import preprocess_batch
+
+        sub_dir = tmp_path / "input" / "sub-042"
+        sub_dir.mkdir(parents=True)
+        img = nib.Nifti1Image(np.zeros((182, 218, 182), dtype=np.uint8), np.eye(4))
+        lesion = sub_dir / "mni_sub-042_lesion_mask.nii.gz"
+        nib.save(img, str(lesion))
+
+        prep = tmp_path / "prep"
+        with patch(
+            "bcblib.tools.lesion_features._preprocess.normalise_lesion_to_mni6",
+            return_value=img,
+        ):
+            results = preprocess_batch(
+                tmp_path / "input", prep,
+                suffix="*_lesion_mask.nii.gz", flat=True,
+            )
+
+        assert "042" in results
+        out = results["042"]
+        assert out.exists()
+        assert "sub-042" in str(out)
+        assert "anat" in str(out)
+
     def test_predict_disco_output_plain(self):
         from bcblib.tools.lesion_features._disco import predict_disco_output
         p = predict_disco_output(
@@ -227,6 +297,16 @@ class TestPreprocess:
         assert detect_resolution_from_shape(img) == 1
         img2 = _make_nifti(np.zeros((193, 229, 193), dtype=np.float32))
         assert detect_resolution_from_shape(img2) == 1
+        # SPM12 MNI152 1 mm template (slightly smaller FOV than FSL)
+        img3 = _make_nifti(np.zeros((181, 217, 181), dtype=np.float32))
+        assert detect_resolution_from_shape(img3) == 1
+
+    def test_normalise_spm_shape_resampled_to_canonical(self):
+        """SPM (181,217,181) lesion must be padded to FSL canonical (182,218,182)."""
+        from bcblib.tools.lesion_features._preprocess import normalise_lesion_to_mni6
+        img = _make_nifti(np.zeros((181, 217, 181), dtype=np.uint8))
+        out = normalise_lesion_to_mni6(img, source_space=None, source_res=1)
+        assert out.shape[:3] == (182, 218, 182)
 
     def test_detect_resolution_from_shape_2mm(self):
         from bcblib.tools.lesion_features._preprocess import detect_resolution_from_shape
@@ -379,12 +459,12 @@ class TestDiscoRunner:
 
         (lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz").touch()
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             run_disco_batch(lesion_dir, disco_dir, fake_kit)
 
-        args = mock_run.call_args[0][0]
+        args = mock_popen.call_args[0][0]
         assert "-r" in args
         rename_val = args[args.index("-r") + 1]
         assert "_label-lesion_mask:_desc-disconnectome" == rename_val
@@ -396,9 +476,9 @@ class TestDiscoRunner:
         fake_kit = tmp_path / "kit"
         fake_kit.mkdir()
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        with patch("subprocess.run", return_value=mock_result):
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 1
+        with patch("subprocess.Popen", return_value=mock_proc):
             with pytest.raises(RuntimeError, match="run_disco.sh failed"):
                 run_disco_batch(lesion_dir, tmp_path / "disco", fake_kit)
 
@@ -417,12 +497,12 @@ class TestDiscoRunner:
         fake_kit = tmp_path / "kit"
         fake_kit.mkdir()
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             run_disco_batch(lesion_dir, tmp_path / "disco", fake_kit, ncores=4)
 
-        args = mock_run.call_args[0][0]
+        args = mock_popen.call_args[0][0]
         assert "-n" in args
         assert "4" in args
 

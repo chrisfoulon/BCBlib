@@ -4,6 +4,9 @@ import argparse
 import sys
 from pathlib import Path
 
+_BIDS_SUFFIX = "*_label-lesion_mask.nii.gz"
+_FLAT_SUFFIX = "*_lesion_mask.nii.gz"
+
 
 def _build_parser():
     p = argparse.ArgumentParser(
@@ -15,7 +18,11 @@ def _build_parser():
     )
     p.add_argument(
         "--bids-dir", required=True, metavar="PATH",
-        help="Input BIDS directory containing sub-*/anat/*_label-lesion_mask.nii.gz",
+        help=(
+            "Input directory.  With the default BIDS layout, expects "
+            "sub-*/anat/*_label-lesion_mask.nii.gz.  Use --flat for "
+            "pipelines that place files directly under sub-*/ (e.g. StrokeBrain)."
+        ),
     )
     p.add_argument(
         "--output-dir", default="./lesion_features_prep", metavar="DIR",
@@ -46,10 +53,19 @@ def _build_parser():
         ),
     )
     p.add_argument(
-        "--lesion-suffix", default="*_label-lesion_mask.nii.gz", metavar="GLOB",
+        "--flat", action="store_true",
         help=(
-            "Glob pattern for lesion mask filenames "
-            "(default: '*_label-lesion_mask.nii.gz'). "
+            "Input uses a flat layout: lesion files sit directly under sub-*/ "
+            "with no anat/ subfolder (e.g. StrokeBrain output).  "
+            "Changes the default --lesion-suffix to '*_lesion_mask.nii.gz'."
+        ),
+    )
+    p.add_argument(
+        "--lesion-suffix", default=None, metavar="GLOB",
+        help=(
+            "Glob pattern for lesion mask filenames inside each subject directory. "
+            "Defaults to '*_label-lesion_mask.nii.gz' (BIDS) or "
+            "'*_lesion_mask.nii.gz' when --flat is set. "
             "Override if your project uses a different naming convention."
         ),
     )
@@ -68,14 +84,28 @@ def main(argv=None):
     output_dir = Path(args.output_dir)
     force = not args.skip_existing
 
+    # Resolve lesion suffix: explicit > flat default > BIDS default
+    if args.lesion_suffix is not None:
+        suffix = args.lesion_suffix
+    elif args.flat:
+        suffix = _FLAT_SUFFIX
+    else:
+        suffix = _BIDS_SUFFIX
+
     if not bids_dir.exists():
         print(f"ERROR: bids-dir does not exist: {bids_dir}", file=sys.stderr)
         sys.exit(1)
 
     if args.dry_run:
-        from bcblib.tools.lesion_features._bids import iter_bids_lesions
-        subjects = list(iter_bids_lesions(bids_dir, suffix=args.lesion_suffix))
-        print(f"Would preprocess {len(subjects)} lesion(s):")
+        from bcblib.tools.lesion_features._bids import iter_bids_lesions, iter_flat_lesions
+        iterator = (
+            iter_flat_lesions(bids_dir, suffix=suffix)
+            if args.flat
+            else iter_bids_lesions(bids_dir, suffix=suffix)
+        )
+        subjects = list(iterator)
+        mode = "flat" if args.flat else "BIDS"
+        print(f"Would preprocess {len(subjects)} lesion(s) [{mode} mode, suffix={suffix!r}]:")
         for sub_id, ses_id, path in subjects:
             ses_part = f" ses-{ses_id}" if ses_id else ""
             print(f"  sub-{sub_id}{ses_part}: {path}")
@@ -84,8 +114,11 @@ def main(argv=None):
     from bcblib.tools.lesion_features._pipeline import preprocess_batch
     from bcblib.tools.lesion_features._disco import find_bcbtoolkit, run_disco_batch
 
-    print(f"Preprocessing lesions → {output_dir}")
-    results = preprocess_batch(bids_dir, output_dir, force=force, suffix=args.lesion_suffix)
+    mode = "flat" if args.flat else "BIDS"
+    print(f"Preprocessing lesions [{mode} mode] → {output_dir}")
+    results = preprocess_batch(
+        bids_dir, output_dir, force=force, suffix=suffix, flat=args.flat,
+    )
     print(f"Preprocessed {len(results)} subject(s).")
 
     try:
@@ -94,39 +127,36 @@ def main(argv=None):
         print(f"WARNING: {e}\nSkipping disconnectome computation.", file=sys.stderr)
         return
 
-    # Collect lesion dir(s) and run disco per session/subject
+    # Flatten all normalised lesions (always BIDS-named in the prep dir) into a
+    # tmp dir for run_disco.sh, then move the outputs back into BIDS structure.
     from bcblib.tools.lesion_features._bids import iter_bids_lesions
+    from bcblib.tools.lesion_features._disco import predict_disco_output
     import shutil
 
-    # Flatten all normalised lesions into a tmp dir for run_disco.sh (folder mode)
-    # keeping a mapping so we can move disconnectomes back into BIDS structure.
     lesion_dir = output_dir / "_tmp_lesions_for_disco"
     lesion_dir.mkdir(parents=True, exist_ok=True)
     disco_flat = output_dir / "_tmp_disco_flat"
-    sub_map = {}  # filename_stem → (sub_id, ses_id, anat_dir)
+    sub_map = {}  # expected_disco_stem → anat_dir
     try:
-        from bcblib.tools.lesion_features._disco import predict_disco_output
         for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
             expected = predict_disco_output(lesion_path, disco_flat)
             stem = expected.name.replace(".nii.gz", "")
-            sub_map[stem] = (sub_id, ses_id, lesion_path.parent)
+            sub_map[stem] = lesion_path.parent
 
         n = len(list(lesion_dir.glob("*.nii.gz")))
-        print(f"Running disconnectome computation for {n} subjects...")
+        print(f"Running disconnectome computation for {n} subject(s)...")
         run_disco_batch(
             lesion_dir, disco_flat, kit,
             ncores=args.ncores, tracks_dir=args.tracks_dir,
             tmpdir=args.tmpdir,
         )
 
-        # Move disconnectomes into the per-subject BIDS anat directories
         moved = 0
         for disco_file in sorted(disco_flat.glob("*disconnectome.nii.gz")):
             stem = disco_file.name.replace(".nii.gz", "")
             if stem in sub_map:
-                _, _, anat_dir = sub_map[stem]
-                dest = anat_dir / disco_file.name
+                dest = sub_map[stem] / disco_file.name
                 shutil.move(str(disco_file), str(dest))
                 moved += 1
         print(f"Moved {moved} disconnectome(s) into BIDS structure.")
