@@ -167,5 +167,10 @@ def check_and_resample(
                 f"Issues: {info['issues']}"
             )
 
-    resampled = _resample_to_img(atlas_img, subject_img, interpolation="nearest")
+    resampled = _resample_to_img(
+        atlas_img, subject_img,
+        interpolation="nearest",
+        force_resample=True,
+        copy_header=True,
+    )
     return resampled.get_fdata()
