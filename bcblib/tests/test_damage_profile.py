@@ -596,12 +596,12 @@ class TestAtlasManager:
         from bcblib.tools.damage_profile._atlas_manager import (
             get_preset_atlas, get_atlas_dir, PRESET_ATLASES,
         )
-        # Pre-populate a fake cache for "rojkova" (directory format)
-        cache = tmp_path / "rojkova"
-        cache.mkdir()
+        # Rojkova extracts to a Tracts/ subdirectory
+        tracts_dir = tmp_path / "rojkova" / "Tracts"
+        tracts_dir.mkdir(parents=True)
         arr = np.zeros((5, 5, 5), dtype=np.float32)
         arr[0, 0, 0] = 1.0
-        _save_nifti(cache / "tract_L.nii.gz", arr)
+        _save_nifti(tracts_dir / "tract_L.nii.gz", arr)
 
         with patch(
             "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
@@ -635,8 +635,9 @@ class TestAtlasManager:
         arr[0, 0, 0] = 1.0
 
         def fake_download(info, dest):
-            dest.mkdir(parents=True, exist_ok=True)
-            _save_nifti(dest / "tract.nii.gz", arr)
+            tracts = dest / "Tracts"
+            tracts.mkdir(parents=True, exist_ok=True)
+            _save_nifti(tracts / "tract.nii.gz", arr)
 
         with patch(
             "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
@@ -664,8 +665,9 @@ class TestAtlasManager:
         arr[0, 0, 0] = 1.0
 
         def fake_download(info, dest):
-            dest.mkdir(parents=True, exist_ok=True)
-            _save_nifti(dest / "tract.nii.gz", arr)
+            tracts = dest / "Tracts"
+            tracts.mkdir(parents=True, exist_ok=True)
+            _save_nifti(tracts / "tract.nii.gz", arr)
 
         with patch(
             "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",

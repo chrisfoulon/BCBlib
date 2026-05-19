@@ -81,6 +81,7 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
         fmt="directory",
         space="MNI152NLin6Asym",
         citation="Rojkova et al. (2016) Brain Struct Funct 221:4006-4021",
+        nifti_path="Tracts",
     ),
     "tian_s1": AtlasInfo(
         full_name="Tian Subcortex Atlas Scale I (16 regions)",
