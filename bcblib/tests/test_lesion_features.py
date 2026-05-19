@@ -110,7 +110,7 @@ class TestBidsUtils:
         from bcblib.tools.lesion_features._bids import build_prep_path
         p = build_prep_path("/prep", "001", None, "mask", "label-lesion")
         assert p.name == "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz"
-        assert p.parent.name == "anat"
+        assert p.parent.name == "lesion"
         assert p.parent.parent.name == "sub-001"
 
     def test_build_prep_path_with_ses(self):
@@ -245,7 +245,7 @@ class TestBidsUtils:
         out = results["042"]
         assert out.exists()
         assert "sub-042" in str(out)
-        assert "anat" in str(out)
+        assert "lesion" in str(out)
 
     def test_predict_disco_output_plain(self):
         from bcblib.tools.lesion_features._disco import predict_disco_output
@@ -646,14 +646,14 @@ class TestPipelines:
         prep = tmp_path / "prep"
 
         for sub in ("001", "002"):
-            anat = prep / f"sub-{sub}" / "anat"
-            anat.mkdir(parents=True)
+            lesion_dir = prep / f"sub-{sub}" / "lesion"
+            lesion_dir.mkdir(parents=True)
             _save_nifti(
-                anat / f"sub-{sub}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
+                lesion_dir / f"sub-{sub}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
                 lesion_data,
             )
             _save_nifti(
-                anat / f"sub-{sub}_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
+                lesion_dir / f"sub-{sub}_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
                 lesion_data,
             )
 
@@ -671,14 +671,14 @@ class TestPipelines:
         prep = tmp_path / "prep"
 
         for sub, ses in (("001", "01"), ("002", "02")):
-            anat = prep / f"sub-{sub}" / f"ses-{ses}" / "anat"
-            anat.mkdir(parents=True)
+            lesion_dir = prep / f"sub-{sub}" / f"ses-{ses}" / "lesion"
+            lesion_dir.mkdir(parents=True)
             _save_nifti(
-                anat / f"sub-{sub}_ses-{ses}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
+                lesion_dir / f"sub-{sub}_ses-{ses}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
                 lesion_data,
             )
             _save_nifti(
-                anat / f"sub-{sub}_ses-{ses}_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
+                lesion_dir / f"sub-{sub}_ses-{ses}_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
                 lesion_data,
             )
 
@@ -687,12 +687,12 @@ class TestPipelines:
         assert "001_ses-01" in results
         assert "002_ses-02" in results
 
-    def test_extract_features_batch_no_lesion_in_anat(self, tmp_path):
+    def test_extract_features_batch_no_lesion_in_lesion_dir(self, tmp_path):
         from bcblib.tools.lesion_features._pipeline import extract_features_batch
         spec = self._make_atlas_spec(tmp_path)
         prep = tmp_path / "prep"
-        anat = prep / "sub-001" / "anat"
-        anat.mkdir(parents=True)
+        lesion_dir = prep / "sub-001" / "lesion"
+        lesion_dir.mkdir(parents=True)
         # no lesion file — should silently skip
 
         results = extract_features_batch(prep, [spec], tmp_path / "out")
@@ -705,10 +705,10 @@ class TestPipelines:
         lesion_data[90, 109, 90] = 1.0
         prep = tmp_path / "prep"
 
-        anat = prep / "sub-001" / "anat"
-        anat.mkdir(parents=True)
+        lesion_dir = prep / "sub-001" / "lesion"
+        lesion_dir.mkdir(parents=True)
         _save_nifti(
-            anat / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
+            lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
             lesion_data,
         )
         # no disconnectome file → should warn and skip

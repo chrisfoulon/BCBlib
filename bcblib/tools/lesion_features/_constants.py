@@ -2,7 +2,8 @@
 
 TARGET_SPACE = "MNI152NLin6Asym"
 TARGET_RES = 1
-DEFAULT_BCBTOOLKIT = "/home/chrisfoulon/neuro_apps/BCBToolKitLINUX/BCBToolKit"
+DEFAULT_BCBTOOLKIT = "/opt/BCBToolkit"
+LF_SUBDIR = "lesion"
 
 EBRAINS_ATLAS_SPECS = [
     "aal",

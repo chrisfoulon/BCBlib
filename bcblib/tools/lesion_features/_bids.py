@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Tuple
 
+from bcblib.tools.lesion_features._constants import LF_SUBDIR
+
 
 def parse_bids_entities(path) -> Dict[str, Optional[str]]:
     """Parse BIDS entities from a filename.
@@ -57,7 +59,7 @@ def build_lf_csv_path(
     sub_dir = Path(output_dir) / f"sub-{sub}"
     if ses:
         sub_dir = sub_dir / f"ses-{ses}"
-    return sub_dir / "anat" / name
+    return sub_dir / LF_SUBDIR / name
 
 
 def build_lf_tsv_path(
@@ -81,7 +83,7 @@ def build_lf_tsv_path(
     sub_dir = Path(output_dir) / f"sub-{sub}"
     if ses:
         sub_dir = sub_dir / f"ses-{ses}"
-    return sub_dir / "anat" / name
+    return sub_dir / LF_SUBDIR / name
 
 
 def build_prep_path(
@@ -121,12 +123,13 @@ def build_prep_path(
     sub_dir = Path(prep_dir) / f"sub-{sub}"
     if ses:
         sub_dir = sub_dir / f"ses-{ses}"
-    return sub_dir / "anat" / name
+    return sub_dir / LF_SUBDIR / name
 
 
 def iter_bids_lesions(
     bids_dir,
     suffix: str = "*_label-lesion_mask.nii.gz",
+    subdir: str = "anat",
 ) -> Iterator[Tuple[str, Optional[str], Path]]:
     """Yield ``(sub_id, ses_id_or_None, lesion_path)`` for every lesion mask.
 
@@ -137,23 +140,27 @@ def iter_bids_lesions(
         Glob pattern for lesion mask filenames.  Default matches the standard
         ``*_label-lesion_mask.nii.gz`` convention; override if your project
         uses a different naming (e.g. ``*_label-tumor_mask.nii.gz``).
+    subdir : str
+        Name of the per-subject subdirectory that contains the NIfTI files.
+        Defaults to ``"anat"`` for standard BIDS input; use ``LF_SUBDIR``
+        when iterating over a lesion-features prep/output directory.
     """
     bids_root = Path(bids_dir)
     for sub_dir in sorted(bids_root.glob("sub-*")):
         if not sub_dir.is_dir():
             continue
         sub_id = sub_dir.name[4:]  # strip "sub-"
-        anat_dir = sub_dir / "anat"
-        if anat_dir.is_dir():
-            for f in sorted(anat_dir.glob(suffix)):
+        img_dir = sub_dir / subdir
+        if img_dir.is_dir():
+            for f in sorted(img_dir.glob(suffix)):
                 yield sub_id, None, f
         for ses_dir in sorted(sub_dir.glob("ses-*")):
             if not ses_dir.is_dir():
                 continue
             ses_id = ses_dir.name[4:]  # strip "ses-"
-            anat_dir = ses_dir / "anat"
-            if anat_dir.is_dir():
-                for f in sorted(anat_dir.glob(suffix)):
+            img_dir = ses_dir / subdir
+            if img_dir.is_dir():
+                for f in sorted(img_dir.glob(suffix)):
                     yield sub_id, ses_id, f
 
 

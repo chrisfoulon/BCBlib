@@ -136,9 +136,9 @@ def main(argv=None):
     lesion_dir = output_dir / "_tmp_lesions_for_disco"
     lesion_dir.mkdir(parents=True, exist_ok=True)
     disco_flat = output_dir / "_tmp_disco_flat"
-    sub_map = {}  # expected_disco_stem → anat_dir
+    sub_map = {}  # expected_disco_stem → lesion_dir
     try:
-        for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir):
+        for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir, subdir="lesion"):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
             expected = predict_disco_output(lesion_path, disco_flat)
             stem = expected.name.replace(".nii.gz", "")

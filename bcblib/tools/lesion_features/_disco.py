@@ -104,6 +104,12 @@ def run_disco_batch(
     disco_dir = Path(disco_dir)
     disco_dir.mkdir(parents=True, exist_ok=True)
 
+    # Derive a default tracks directory from the toolkit path when not explicit.
+    if tracks_dir is None:
+        default_tracks = bcbtoolkit / "Tools" / "extraFiles" / "tracks_1mm"
+        if default_tracks.is_dir():
+            tracks_dir = str(default_tracks)
+
     cmd = [
         "bash", str(bcbtoolkit / "run_disco.sh"),
         "-l", str(lesion_dir),

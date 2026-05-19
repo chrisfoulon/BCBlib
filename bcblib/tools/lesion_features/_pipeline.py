@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from bcblib.tools.lesion_features._constants import EBRAINS_ATLAS_SPECS, TARGET_SPACE
+from bcblib.tools.lesion_features._constants import EBRAINS_ATLAS_SPECS, LF_SUBDIR, TARGET_SPACE
 from bcblib.tools.lesion_features._bids import (
     build_lf_csv_path,
     build_lf_tsv_path,
@@ -235,17 +235,17 @@ def extract_features_batch(
 
 
 def _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force):
-    """Process all session or flat anat directories for one subject."""
-    anat_dir = sub_dir / "anat"
-    if anat_dir.is_dir():
-        _process_anat(sub_id, None, anat_dir, atlases, output_dir, results, force)
+    """Process all session or sessionless lesion directories for one subject."""
+    lesion_dir = sub_dir / LF_SUBDIR
+    if lesion_dir.is_dir():
+        _process_anat(sub_id, None, lesion_dir, atlases, output_dir, results, force)
     for ses_dir in sorted(sub_dir.glob("ses-*")):
         if not ses_dir.is_dir():
             continue
         ses_id = ses_dir.name[4:]
-        anat_dir = ses_dir / "anat"
-        if anat_dir.is_dir():
-            _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force)
+        lesion_dir = ses_dir / LF_SUBDIR
+        if lesion_dir.is_dir():
+            _process_anat(sub_id, ses_id, lesion_dir, atlases, output_dir, results, force)
 
 
 def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force):
