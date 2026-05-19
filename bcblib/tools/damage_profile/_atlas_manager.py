@@ -377,6 +377,30 @@ def list_preset_atlases() -> List[str]:
     return list(PRESET_ATLASES.keys())
 
 
+_MNI6_SPACE = "MNI152NLin6Asym"
+_MNI6_READY_MARKER = ".mni6_ready"
+
+
+def _warp_directory_to_mni6(cache_dir: Path, source_space: str) -> None:
+    """Warp all NIfTI files in *cache_dir* from *source_space* to MNI152NLin6Asym.
+
+    Files are overwritten in-place.  A ``.mni6_ready`` marker is written on
+    success so that subsequent calls skip the warp.
+    """
+    from bcblib.tools.damage_profile._space import _apply_templateflow_warp
+    import nibabel as nib
+
+    niftis = sorted(cache_dir.glob("*.nii*"))
+    if not niftis:
+        return
+    print(f"Warping {len(niftis)} file(s) from {source_space} → MNI152NLin6Asym …")
+    for f in niftis:
+        img = nib.load(str(f))
+        warped = _apply_templateflow_warp(img, source_space, _MNI6_SPACE)
+        nib.save(warped, str(f))
+    (cache_dir / _MNI6_READY_MARKER).touch()
+
+
 def _download_atlas(info: AtlasInfo, dest: Path) -> None:
     """Download and extract an atlas archive to *dest*.
 
@@ -471,6 +495,12 @@ def get_preset_atlas(
     # 2. Local cache
     cache = get_atlas_dir() / name
     if cache.exists() and any(cache.iterdir()):
+        if (
+            info.fmt == "directory"
+            and info.space != _MNI6_SPACE
+            and not (cache / _MNI6_READY_MARKER).exists()
+        ):
+            _warp_directory_to_mni6(cache, info.space)
         nifti_path = (cache / info.nifti_path) if info.nifti_path else cache
         _lc = (cache / info.label_file) if info.label_file else None
         label = str(_lc) if _lc and _lc.exists() else None
@@ -521,6 +551,9 @@ def get_preset_atlas(
             )
 
     _download_atlas(info, cache)
+
+    if info.fmt == "directory" and info.space != _MNI6_SPACE:
+        _warp_directory_to_mni6(cache, info.space)
 
     nifti_path = (cache / info.nifti_path) if info.nifti_path else cache
     _lc2 = (cache / info.label_file) if info.label_file else None

@@ -9,6 +9,8 @@ EBRAINS_ATLAS_SPECS = [
     "buckner_7n",
     "tian_s1",
     "tian_s2",
+    "rojkova",
+    "yeh_hcp1065",
     "schaefer_200_7n",
     "schaefer_300_7n",
     "schaefer_400_7n",

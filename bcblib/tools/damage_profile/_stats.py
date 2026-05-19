@@ -80,6 +80,15 @@ def compute_region_stats_from_labels(
     )
 
 
+_PROB_COLUMNS = [
+    "region_name", "n_voxels_region", "n_voxels_overlap",
+    "fraction_covered", "mean_overlap", "weighted_mean_overlap",
+    "sum_overlap", "sum_atlas_in_tract", "pwll_normalised",
+    "max_atlas_prob_in_overlap", "continuous_dice",
+    "p90_overlap", "p95_overlap",
+]
+
+
 def compute_region_stats(
     subject_data: np.ndarray,
     atlas_dict: Dict[str, np.ndarray],
@@ -93,6 +102,8 @@ def compute_region_stats(
         3D array (the subject lesion or disconnectome map).
     atlas_dict : dict[str, np.ndarray]
         Region name → 3D weight array mapping, as returned by ``load_atlas``.
+        When atlas values are probabilities (e.g. tractography atlases),
+        probabilistic metrics are also computed.
     min_overlap_voxels : int
         Regions with fewer than this many non-zero overlapping voxels are excluded.
 
@@ -101,7 +112,21 @@ def compute_region_stats(
     pd.DataFrame
         One row per region, sorted by ``mean_overlap`` descending.
         Columns: region_name, n_voxels_region, n_voxels_overlap, fraction_covered,
-        mean_overlap, weighted_mean_overlap, sum_overlap, p90_overlap, p95_overlap.
+        mean_overlap, weighted_mean_overlap, sum_overlap, sum_atlas_in_tract,
+        pwll_normalised, max_atlas_prob_in_overlap, continuous_dice,
+        p90_overlap, p95_overlap.
+
+    Notes
+    -----
+    ``pwll_normalised`` (probability-weighted lesion load, normalised) is
+    ``sum_overlap / sum_atlas_in_tract`` — the expected fraction of the tract's
+    total probability mass that is overlapped by the subject map.  For a
+    disconnectome map this quantifies the expected fraction of the tract that
+    is functionally severed.
+
+    ``continuous_dice`` is ``2 × sum_overlap / (n_voxels_overlap + sum_atlas_in_tract)``,
+    a bidirectional size-normalised overlap metric that accounts for both the
+    subject map extent and the atlas probability mass.
     """
     rows = []
     for region_name, weights in atlas_dict.items():
@@ -118,26 +143,34 @@ def compute_region_stats(
             continue
 
         nonzero_vals = overlap_vals[nonzero_mask]
+        sum_ov = float(subject_data[mask].sum())
+        sum_atlas = float(weights[mask].sum())
+        pwll_norm = sum_ov / sum_atlas if sum_atlas > 0 else float("nan")
+        subj_nonzero_in_tract = int((subject_data > 0)[mask].sum())
+        denom = subj_nonzero_in_tract + sum_atlas
+        cont_dice = (2.0 * sum_ov / denom) if denom > 0 else float("nan")
+        subj_nonzero_mask = subject_data > 0
+        weights_at_overlap = weights[subj_nonzero_mask & mask]
+        max_atlas_prob = float(weights_at_overlap.max()) if weights_at_overlap.size > 0 else 0.0
+
         rows.append({
             "region_name": region_name,
             "n_voxels_region": n_total,
             "n_voxels_overlap": n_nonzero,
             "fraction_covered": _fraction_covered_array(subject_data, mask),
             "mean_overlap": float(subject_data[mask].mean()),
-            "weighted_mean_overlap": _weighted_region_mean_array(
-                subject_data, weights
-            ),
-            "sum_overlap": float(subject_data[mask].sum()),
+            "weighted_mean_overlap": _weighted_region_mean_array(subject_data, weights),
+            "sum_overlap": sum_ov,
+            "sum_atlas_in_tract": sum_atlas,
+            "pwll_normalised": pwll_norm,
+            "max_atlas_prob_in_overlap": max_atlas_prob,
+            "continuous_dice": cont_dice,
             "p90_overlap": float(np.percentile(nonzero_vals, 90)),
             "p95_overlap": float(np.percentile(nonzero_vals, 95)),
         })
 
     if not rows:
-        return pd.DataFrame(columns=[
-            "region_name", "n_voxels_region", "n_voxels_overlap",
-            "fraction_covered", "mean_overlap", "weighted_mean_overlap",
-            "sum_overlap", "p90_overlap", "p95_overlap",
-        ])
+        return pd.DataFrame(columns=_PROB_COLUMNS)
 
     return (
         pd.DataFrame(rows)

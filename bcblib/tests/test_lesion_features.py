@@ -780,3 +780,17 @@ class TestCLI:
         with pytest.raises(SystemExit) as exc:
             main(["--prep-dir", str(prep)])
         assert exc.value.code != 0
+
+
+class TestEbrainsAtlasSpecs:
+
+    def test_ebrains_includes_rojkova_and_yeh(self):
+        from bcblib.tools.lesion_features._constants import EBRAINS_ATLAS_SPECS
+        assert "rojkova" in EBRAINS_ATLAS_SPECS
+        assert "yeh_hcp1065" in EBRAINS_ATLAS_SPECS
+
+    def test_ebrains_all_keys_are_registered_presets(self):
+        from bcblib.tools.lesion_features._constants import EBRAINS_ATLAS_SPECS
+        from bcblib.tools.damage_profile._atlas_manager import PRESET_ATLASES
+        for key in EBRAINS_ATLAS_SPECS:
+            assert key in PRESET_ATLASES, f"{key!r} not in PRESET_ATLASES"

@@ -1092,6 +1092,123 @@ class TestCoverageGaps:
         df = compute_region_stats(subj, {"empty_region": weights})
         assert len(df) == 0
 
+    def test_compute_region_stats_probabilistic_metrics(self):
+        from bcblib.tools.damage_profile._stats import compute_region_stats
+        # tract: 4 voxels with probability 0.5; subject: 2 of those voxels = 1.0
+        weights = np.zeros((4, 4, 4), dtype=np.float32)
+        weights[0, 0, 0] = 0.5
+        weights[0, 0, 1] = 0.5
+        weights[0, 0, 2] = 0.5
+        weights[0, 0, 3] = 0.5
+        subj = np.zeros((4, 4, 4), dtype=np.float32)
+        subj[0, 0, 0] = 1.0
+        subj[0, 0, 1] = 1.0
+        df = compute_region_stats(subj, {"tract_A": weights})
+        assert len(df) == 1
+        row = df.iloc[0]
+        # sum_atlas_in_tract = 4 × 0.5 = 2.0
+        assert abs(row["sum_atlas_in_tract"] - 2.0) < 1e-5
+        # sum_overlap = subject values within tract mask = 1.0 + 1.0 + 0.0 + 0.0 = 2.0
+        assert abs(row["sum_overlap"] - 2.0) < 1e-5
+        # pwll_normalised = 2.0 / 2.0 = 1.0
+        assert abs(row["pwll_normalised"] - 1.0) < 1e-5
+        # max_atlas_prob_in_overlap = 0.5 (both overlapping voxels have prob 0.5)
+        assert abs(row["max_atlas_prob_in_overlap"] - 0.5) < 1e-5
+        # continuous_dice = 2×2.0 / (2 + 2.0) = 4/4 = 1.0
+        assert abs(row["continuous_dice"] - 1.0) < 1e-5
+
+    def test_compute_region_stats_pwll_normalised_partial(self):
+        from bcblib.tools.damage_profile._stats import compute_region_stats
+        # Only half the tract is hit — pwll_normalised should be ~0.5
+        weights = np.zeros((4, 4, 4), dtype=np.float32)
+        weights[0, 0, 0] = 1.0
+        weights[0, 0, 1] = 1.0
+        weights[0, 0, 2] = 1.0
+        weights[0, 0, 3] = 1.0
+        subj = np.zeros((4, 4, 4), dtype=np.float32)
+        subj[0, 0, 0] = 1.0
+        subj[0, 0, 1] = 1.0
+        df = compute_region_stats(subj, {"tract_B": weights})
+        row = df.iloc[0]
+        assert abs(row["pwll_normalised"] - 0.5) < 1e-5
+
+    def test_compute_region_stats_no_overlap_excluded(self):
+        from bcblib.tools.damage_profile._stats import compute_region_stats
+        weights = np.zeros((4, 4, 4), dtype=np.float32)
+        weights[0, 0, 0] = 0.8
+        subj = np.zeros((4, 4, 4), dtype=np.float32)  # no overlap
+        df = compute_region_stats(subj, {"tract_C": weights})
+        assert len(df) == 0
+
+    def test_warp_directory_to_mni6_writes_marker(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas_manager import (
+            _warp_directory_to_mni6, _MNI6_READY_MARKER,
+        )
+        import nibabel as nib
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[2, 2, 2] = 1.0
+        for fname in ("tract_L.nii.gz", "tract_R.nii.gz"):
+            nib.save(nib.Nifti1Image(arr, np.eye(4)), str(tmp_path / fname))
+
+        warped_img = nib.Nifti1Image(arr * 2, np.eye(4))
+
+        with patch(
+            "bcblib.tools.damage_profile._space._apply_templateflow_warp",
+            return_value=warped_img,
+        ) as mock_warp:
+            _warp_directory_to_mni6(tmp_path, "MNI152NLin2009cAsym")
+
+        assert (tmp_path / _MNI6_READY_MARKER).exists()
+        assert mock_warp.call_count == 2
+
+    def test_get_preset_atlas_non_mni6_directory_triggers_warp(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas
+        import nibabel as nib
+
+        cache = tmp_path / "yeh_hcp1065"
+        cache.mkdir()
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[1, 1, 1] = 0.7
+        nib.save(nib.Nifti1Image(arr, np.eye(4)), str(cache / "tract_CST.nii.gz"))
+
+        warped_img = nib.Nifti1Image(arr, np.eye(4))
+
+        with patch(
+            "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
+            return_value=tmp_path,
+        ), patch(
+            "bcblib.tools.damage_profile._space._apply_templateflow_warp",
+            return_value=warped_img,
+        ) as mock_warp:
+            result = get_preset_atlas("yeh_hcp1065")
+
+        assert mock_warp.call_count == 1
+        assert "tract_CST" in result
+
+    def test_get_preset_atlas_mni6_ready_skips_warp(self, tmp_path):
+        from bcblib.tools.damage_profile._atlas_manager import (
+            get_preset_atlas, _MNI6_READY_MARKER,
+        )
+        import nibabel as nib
+
+        cache = tmp_path / "yeh_hcp1065"
+        cache.mkdir()
+        arr = np.zeros((5, 5, 5), dtype=np.float32)
+        arr[1, 1, 1] = 0.7
+        nib.save(nib.Nifti1Image(arr, np.eye(4)), str(cache / "tract_CST.nii.gz"))
+        (cache / _MNI6_READY_MARKER).touch()
+
+        with patch(
+            "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",
+            return_value=tmp_path,
+        ), patch(
+            "bcblib.tools.damage_profile._space._apply_templateflow_warp",
+        ) as mock_warp:
+            result = get_preset_atlas("yeh_hcp1065")
+
+        mock_warp.assert_not_called()
+        assert "tract_CST" in result
+
     # --- _space.py ---
 
     def test_apply_templateflow_warp_no_warp_raises(self):
