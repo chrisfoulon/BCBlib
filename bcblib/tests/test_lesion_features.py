@@ -717,6 +717,63 @@ class TestPipelines:
             results = extract_features_batch(prep, [spec], tmp_path / "out")
         assert len(results) == 0
 
+    def test_extract_features_one_skips_all_when_complete(self, tmp_path):
+        from bcblib.tools.lesion_features._pipeline import extract_features_one
+        spec = self._make_atlas_spec(tmp_path)
+        lesion = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion[90, 109, 90] = 1.0
+        lesion_path = tmp_path / "sub-001_label-lesion_mask.nii.gz"
+        _save_nifti(lesion_path, lesion)
+        out = tmp_path / "out"
+
+        written1 = extract_features_one("001", None, lesion_path, None, [spec], out, force=True)
+        assert written1
+
+        written2 = extract_features_one("001", None, lesion_path, None, [spec], out, force=False)
+        assert not written2  # everything already on disk — nothing written
+
+    def test_extract_features_one_writes_only_missing_atlas(self, tmp_path):
+        from bcblib.tools.lesion_features._pipeline import extract_features_one
+        spec1 = self._make_atlas_spec(tmp_path, name="atlas1")
+        spec2 = self._make_atlas_spec(tmp_path, name="atlas2")
+        lesion = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion[90, 109, 90] = 1.0
+        lesion_path = tmp_path / "sub-001_label-lesion_mask.nii.gz"
+        _save_nifti(lesion_path, lesion)
+        out = tmp_path / "out"
+
+        # First run: only spec1
+        extract_features_one("001", None, lesion_path, None, [spec1], out, force=True)
+
+        # Second run: spec1 + spec2 with skip — should write only spec2
+        written = extract_features_one("001", None, lesion_path, None, [spec1, spec2], out, force=False)
+        assert "lesion_atlas2_csv" in written
+        assert "lesion_atlas1_csv" not in written
+
+    def test_extract_features_batch_skips_complete_subjects(self, tmp_path):
+        from bcblib.tools.lesion_features._pipeline import extract_features_batch
+        spec = self._make_atlas_spec(tmp_path)
+        lesion_data = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion_data[90, 109, 90] = 1.0
+        prep = tmp_path / "prep"
+        lesion_dir = prep / "sub-001" / "lesion"
+        lesion_dir.mkdir(parents=True)
+        _save_nifti(
+            lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
+            lesion_data,
+        )
+        _save_nifti(
+            lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
+            lesion_data,
+        )
+        out = tmp_path / "out"
+
+        results1 = extract_features_batch(prep, [spec], out, force=True)
+        assert "001" in results1
+
+        results2 = extract_features_batch(prep, [spec], out, force=False)
+        assert len(results2) == 0  # fully done — skipped
+
     def test_preprocess_batch_handles_missing_space_in_filename(self, tmp_path):
         from bcblib.tools.lesion_features._pipeline import preprocess_batch
         bids = tmp_path / "bids"

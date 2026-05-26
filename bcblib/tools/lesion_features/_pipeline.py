@@ -141,6 +141,7 @@ def extract_features_one(
     atlases,
     output_dir,
     lesion_desc: Optional[str] = None,
+    force: bool = False,
 ) -> Dict[str, Path]:
     """Extract lesion and disconnectome features for one subject.
 
@@ -152,10 +153,13 @@ def extract_features_one(
         Value of the ``desc-`` entity from the lesion filename (e.g. ``'core'``,
         ``'edema'``).  Propagated into output filenames to distinguish multiple
         lesion types per subject (glioma).
+    force : bool
+        When False, skip atlas CSVs and mapstats TSVs that already exist on
+        disk.  Only the missing outputs are computed and written.
 
     Returns
     -------
-    dict mapping output file descriptions to paths.
+    dict mapping output file descriptions to paths (only newly written files).
     """
     from bcblib.tools.damage_profile import damage_profile
 
@@ -165,9 +169,33 @@ def extract_features_one(
     for variant, map_path in (("lesion", lesion_path), ("disconnectome", disco_path)):
         if map_path is None:
             continue
-        dp_results = damage_profile(map_path, atlases)
 
-        for atlas_spec in atlases:
+        tsv_path = build_lf_tsv_path(
+            output_dir, sub_id, ses_id, TARGET_SPACE, variant,
+            lesion_desc=lesion_desc,
+        )
+        need_tsv = force or not tsv_path.exists()
+
+        if force:
+            atlases_to_run = atlases
+        else:
+            atlases_to_run = [
+                spec for spec in atlases
+                if not build_lf_csv_path(
+                    output_dir, sub_id, ses_id, TARGET_SPACE,
+                    variant, spec.name, lesion_desc=lesion_desc,
+                ).exists()
+            ]
+
+        if not atlases_to_run and not need_tsv:
+            continue
+
+        # When only the TSV is missing, pass the full atlas list so that
+        # damage_profile still returns _subject_map_stats.
+        dp_atlases = atlases_to_run if atlases_to_run else atlases
+        dp_results = damage_profile(map_path, dp_atlases)
+
+        for atlas_spec in atlases_to_run:
             df = dp_results.get(atlas_spec.name)
             if df is None:
                 continue
@@ -179,15 +207,12 @@ def extract_features_one(
             df.to_csv(str(csv_path), index=False)
             written[f"{variant}_{atlas_spec.name}_csv"] = csv_path
 
-        stats_df = dp_results.get("_subject_map_stats")
-        if stats_df is not None:
-            tsv_path = build_lf_tsv_path(
-                output_dir, sub_id, ses_id, TARGET_SPACE, variant,
-                lesion_desc=lesion_desc,
-            )
-            tsv_path.parent.mkdir(parents=True, exist_ok=True)
-            stats_df.to_csv(str(tsv_path), sep="\t", index=False)
-            written[f"{variant}_mapstats_tsv"] = tsv_path
+        if need_tsv:
+            stats_df = dp_results.get("_subject_map_stats")
+            if stats_df is not None:
+                tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                stats_df.to_csv(str(tsv_path), sep="\t", index=False)
+                written[f"{variant}_mapstats_tsv"] = tsv_path
 
     return written
 
@@ -282,6 +307,7 @@ def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force)
         )
         written = extract_features_one(
             sub_id, ses_id, lesion_path, disco_path, atlases, output_dir,
-            lesion_desc=lesion_desc,
+            lesion_desc=lesion_desc, force=force,
         )
-        results[key] = written
+        if written:
+            results[key] = written
