@@ -1167,11 +1167,13 @@ class TestCoverageGaps:
         from bcblib.tools.damage_profile._atlas_manager import get_preset_atlas
         import nibabel as nib
 
+        # yeh_hcp1065 has nifti_path="prob", so NIfTIs live in cache/prob/
         cache = tmp_path / "yeh_hcp1065"
-        cache.mkdir()
+        prob_dir = cache / "prob"
+        prob_dir.mkdir(parents=True)
         arr = np.zeros((5, 5, 5), dtype=np.float32)
         arr[1, 1, 1] = 0.7
-        nib.save(nib.Nifti1Image(arr, np.eye(4)), str(cache / "tract_CST.nii.gz"))
+        nib.save(nib.Nifti1Image(arr, np.eye(4)), str(prob_dir / "tract_CST.nii.gz"))
 
         warped_img = nib.Nifti1Image(arr, np.eye(4))
 
@@ -1193,12 +1195,14 @@ class TestCoverageGaps:
         )
         import nibabel as nib
 
+        # yeh_hcp1065 has nifti_path="prob"; marker lives in prob/ alongside the NIfTIs
         cache = tmp_path / "yeh_hcp1065"
-        cache.mkdir()
+        prob_dir = cache / "prob"
+        prob_dir.mkdir(parents=True)
         arr = np.zeros((5, 5, 5), dtype=np.float32)
         arr[1, 1, 1] = 0.7
-        nib.save(nib.Nifti1Image(arr, np.eye(4)), str(cache / "tract_CST.nii.gz"))
-        (cache / _MNI6_READY_MARKER).touch()
+        nib.save(nib.Nifti1Image(arr, np.eye(4)), str(prob_dir / "tract_CST.nii.gz"))
+        (prob_dir / _MNI6_READY_MARKER).touch()
 
         with patch(
             "bcblib.tools.damage_profile._atlas_manager.get_atlas_dir",

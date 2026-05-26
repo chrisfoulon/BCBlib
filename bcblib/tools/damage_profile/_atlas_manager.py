@@ -129,6 +129,7 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
         fmt="directory",
         space="MNI152NLin2009cAsym",
         citation="Yeh et al. (2022) NeuroImage 249:118931",
+        nifti_path="prob",
     ),
     "aal": AtlasInfo(
         full_name="Automated Anatomical Labeling Atlas (AAL, 116 regions)",
@@ -496,12 +497,13 @@ def get_preset_atlas(
     # 2. Local cache
     cache = get_atlas_dir() / name
     if cache.exists() and any(cache.iterdir()):
+        nifti_dir = (cache / info.nifti_path) if info.nifti_path else cache
         if (
             info.fmt == "directory"
             and info.space != _MNI6_SPACE
-            and not (cache / _MNI6_READY_MARKER).exists()
+            and not (nifti_dir / _MNI6_READY_MARKER).exists()
         ):
-            _warp_directory_to_mni6(cache, info.space)
+            _warp_directory_to_mni6(nifti_dir, info.space)
         nifti_path = (cache / info.nifti_path) if info.nifti_path else cache
         _lc = (cache / info.label_file) if info.label_file else None
         label = str(_lc) if _lc and _lc.exists() else None
@@ -554,7 +556,8 @@ def get_preset_atlas(
     _download_atlas(info, cache)
 
     if info.fmt == "directory" and info.space != _MNI6_SPACE:
-        _warp_directory_to_mni6(cache, info.space)
+        nifti_dir = (cache / info.nifti_path) if info.nifti_path else cache
+        _warp_directory_to_mni6(nifti_dir, info.space)
 
     nifti_path = (cache / info.nifti_path) if info.nifti_path else cache
     _lc2 = (cache / info.label_file) if info.label_file else None
