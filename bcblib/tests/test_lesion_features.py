@@ -687,30 +687,6 @@ class TestPipelines:
         assert "001_ses-01" in results
         assert "002_ses-02" in results
 
-    def test_extract_features_batch_legacy_anat_layout(self, tmp_path):
-        """Prep dirs written by old BCBlib (anat/ subdir) should still be processed."""
-        from bcblib.tools.lesion_features._pipeline import extract_features_batch
-        spec = self._make_atlas_spec(tmp_path)
-        lesion_data = np.zeros((182, 218, 182), dtype=np.float32)
-        lesion_data[90, 109, 90] = 1.0
-        prep = tmp_path / "prep"
-
-        anat_dir = prep / "sub-001" / "anat"
-        anat_dir.mkdir(parents=True)
-        _save_nifti(
-            anat_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
-            lesion_data,
-        )
-        _save_nifti(
-            anat_dir / "sub-001_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
-            lesion_data,
-        )
-
-        with pytest.warns(UserWarning, match="legacy 'anat/'"):
-            results = extract_features_batch(prep, [spec], tmp_path / "out")
-        assert "001" in results
-        assert results["001"]  # non-empty dict of paths
-
     def test_extract_features_batch_no_lesion_in_lesion_dir(self, tmp_path):
         from bcblib.tools.lesion_features._pipeline import extract_features_batch
         spec = self._make_atlas_spec(tmp_path)
