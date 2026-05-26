@@ -234,17 +234,38 @@ def extract_features_batch(
     return results
 
 
+def _resolve_lesion_dir(parent_dir: Path) -> Optional[Path]:
+    """Return the lesion NIfTI directory inside *parent_dir*, or None.
+
+    Tries LF_SUBDIR ("lesion") first, then falls back to "anat" for prep
+    directories written by older versions of BCBlib.
+    """
+    preferred = parent_dir / LF_SUBDIR
+    if preferred.is_dir():
+        return preferred
+    legacy = parent_dir / "anat"
+    if legacy.is_dir():
+        warnings.warn(
+            f"Prep directory uses legacy 'anat/' layout: {parent_dir}. "
+            "Re-running bcb-lf-preprocess will migrate it to 'lesion/'.",
+            UserWarning,
+            stacklevel=4,
+        )
+        return legacy
+    return None
+
+
 def _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force):
     """Process all session or sessionless lesion directories for one subject."""
-    lesion_dir = sub_dir / LF_SUBDIR
-    if lesion_dir.is_dir():
+    lesion_dir = _resolve_lesion_dir(sub_dir)
+    if lesion_dir is not None:
         _process_anat(sub_id, None, lesion_dir, atlases, output_dir, results, force)
     for ses_dir in sorted(sub_dir.glob("ses-*")):
         if not ses_dir.is_dir():
             continue
         ses_id = ses_dir.name[4:]
-        lesion_dir = ses_dir / LF_SUBDIR
-        if lesion_dir.is_dir():
+        lesion_dir = _resolve_lesion_dir(ses_dir)
+        if lesion_dir is not None:
             _process_anat(sub_id, ses_id, lesion_dir, atlases, output_dir, results, force)
 
 
