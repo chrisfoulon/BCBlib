@@ -59,6 +59,14 @@ def _build_parser():
         "--skip-existing", action="store_true",
         help="Skip subjects whose output already exists",
     )
+    p.add_argument(
+        "--tdi-dir", default=None, metavar="PATH",
+        help=(
+            "Directory containing the private tdi.py script and "
+            "tdi_map_1mm.nii atlas (default: $TDI_DIR or /opt/tdi). "
+            "TDI is skipped with a warning if not found."
+        ),
+    )
     return p
 
 
@@ -121,7 +129,9 @@ def main(argv=None):
     force = not args.skip_existing
     from bcblib.tools.lesion_features._pipeline import extract_features_batch
     print(f"Extracting features from {prep_dir} → {output_dir}")
-    results = extract_features_batch(prep_dir, atlas_specs, output_dir, force=force)
+    results = extract_features_batch(
+        prep_dir, atlas_specs, output_dir, force=force, tdi_dir=args.tdi_dir,
+    )
     print(f"Processed {len(results)} subject(s).")
 
 

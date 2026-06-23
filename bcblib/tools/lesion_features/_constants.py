@@ -5,6 +5,10 @@ TARGET_RES = 1
 DEFAULT_BCBTOOLKIT = "/opt/BCBToolkit"
 LF_SUBDIR = "lesion"
 
+# Kept outside DEFAULT_BCBTOOLKIT on purpose: the EBRAINS patent office does
+# not allow the TDI script/atlas to ship inside the BCBToolKit distribution.
+DEFAULT_TDI_DIR = "/opt/tdi"
+
 EBRAINS_ATLAS_SPECS = [
     "aal",
     "buckner_7n",

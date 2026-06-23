@@ -520,6 +520,86 @@ class TestDiscoRunner:
 
 
 # ---------------------------------------------------------------------------
+# T3b — Private TDI hook
+# ---------------------------------------------------------------------------
+
+class TestTdi:
+
+    def _make_tdi_dir(self, tmp_path):
+        tdi_dir = tmp_path / "tdi"
+        tdi_dir.mkdir()
+        (tdi_dir / "tdi.py").write_text(
+            "def calculate_tdi(atlas_path, mask_path):\n"
+            "    return 0.42\n"
+        )
+        _save_nifti(tdi_dir / "tdi_map_1mm.nii", np.zeros((4, 4, 4)))
+        return tdi_dir
+
+    def test_find_tdi_dir_default(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import find_tdi_dir
+        fake_dir = self._make_tdi_dir(tmp_path)
+        with patch("bcblib.tools.lesion_features._tdi.DEFAULT_TDI_DIR", str(fake_dir)):
+            p = find_tdi_dir()
+        assert p == fake_dir
+
+    def test_find_tdi_dir_env_override(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import find_tdi_dir
+        fake_dir = self._make_tdi_dir(tmp_path)
+        with patch.dict("os.environ", {"TDI_DIR": str(fake_dir)}):
+            p = find_tdi_dir()
+        assert p == fake_dir
+
+    def test_find_tdi_dir_path_hint(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import find_tdi_dir
+        fake_dir = self._make_tdi_dir(tmp_path)
+        p = find_tdi_dir(path_hint=str(fake_dir))
+        assert p == fake_dir
+
+    def test_find_tdi_dir_warns_if_missing(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import find_tdi_dir
+        with patch(
+            "bcblib.tools.lesion_features._tdi.DEFAULT_TDI_DIR",
+            str(tmp_path / "nonexistent"),
+        ), patch.dict("os.environ", {}, clear=True):
+            with pytest.warns(RuntimeWarning, match="TDI script/atlas not found"):
+                p = find_tdi_dir()
+        assert p is None
+
+    def test_load_tdi_function_returns_none_if_missing(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import load_tdi_function
+        with patch(
+            "bcblib.tools.lesion_features._tdi.DEFAULT_TDI_DIR",
+            str(tmp_path / "nonexistent"),
+        ), patch.dict("os.environ", {}, clear=True):
+            with pytest.warns(RuntimeWarning):
+                fn = load_tdi_function()
+        assert fn is None
+
+    def test_load_tdi_function_calls_calculate_tdi(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import load_tdi_function
+        fake_dir = self._make_tdi_dir(tmp_path)
+        lesion_path = tmp_path / "lesion.nii.gz"
+        _save_nifti(lesion_path, np.zeros((4, 4, 4)))  # same orientation as atlas
+
+        fn = load_tdi_function(path_hint=str(fake_dir))
+        assert fn(lesion_path) == 0.42
+
+    def test_load_tdi_function_reorients_mismatched_lesion(self, tmp_path):
+        from bcblib.tools.lesion_features._tdi import load_tdi_function
+        fake_dir = self._make_tdi_dir(tmp_path)
+        # flip the x axis relative to the atlas (mirrors the real FSL-vs-
+        # TemplateFlow orientation mismatch) — calculate_tdi ignores the data
+        # and returns 0.42 regardless, so this only checks no error is raised.
+        flipped_affine = np.eye(4)
+        flipped_affine[0, 0] = -1
+        lesion_path = tmp_path / "lesion_flipped.nii.gz"
+        _save_nifti(lesion_path, np.zeros((4, 4, 4)), affine=flipped_affine)
+
+        fn = load_tdi_function(path_hint=str(fake_dir))
+        assert fn(lesion_path) == 0.42
+
+
+# ---------------------------------------------------------------------------
 # T4 — Preprocessing pipeline orchestration
 # ---------------------------------------------------------------------------
 
@@ -607,6 +687,29 @@ class TestPipelines:
 
         assert "lesion_mapstats_tsv" in written
         assert written["lesion_mapstats_tsv"].exists()
+
+    def test_extract_features_one_adds_tdi_to_lesion_tsv_only(self, tmp_path):
+        import pandas as pd
+        from bcblib.tools.lesion_features._pipeline import extract_features_one
+        spec = self._make_atlas_spec(tmp_path)
+        lesion = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion[90, 109, 90] = 1.0
+        lesion_path = tmp_path / "sub-001_label-lesion_mask.nii.gz"
+        disco_path = tmp_path / "sub-001_desc-disconnectome.nii.gz"
+        _save_nifti(lesion_path, lesion)
+        _save_nifti(disco_path, lesion)
+
+        tdi_fn = lambda p: 0.42  # noqa: E731
+
+        written = extract_features_one(
+            "001", None, lesion_path, disco_path, [spec], tmp_path / "out", tdi_fn=tdi_fn,
+        )
+
+        lesion_tsv = pd.read_csv(written["lesion_mapstats_tsv"], sep="\t")
+        assert lesion_tsv["tdi"].iloc[0] == 0.42
+
+        disco_tsv = pd.read_csv(written["disconnectome_mapstats_tsv"], sep="\t")
+        assert "tdi" not in disco_tsv.columns
 
     def test_extract_features_one_with_ses(self, tmp_path):
         from bcblib.tools.lesion_features._pipeline import extract_features_one

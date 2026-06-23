@@ -142,6 +142,7 @@ def extract_features_one(
     output_dir,
     lesion_desc: Optional[str] = None,
     force: bool = False,
+    tdi_fn=None,
 ) -> Dict[str, Path]:
     """Extract lesion and disconnectome features for one subject.
 
@@ -156,6 +157,10 @@ def extract_features_one(
     force : bool
         When False, skip atlas CSVs and mapstats TSVs that already exist on
         disk.  Only the missing outputs are computed and written.
+    tdi_fn : callable or None
+        ``lesion_path -> tdi_value``, from :func:`_tdi.load_tdi_function`.
+        Adds a ``tdi`` column to the lesion mapstats TSV when given.  Not
+        applied to the disconnectome map.
 
     Returns
     -------
@@ -210,6 +215,9 @@ def extract_features_one(
         if need_tsv:
             stats_df = dp_results.get("_subject_map_stats")
             if stats_df is not None:
+                if tdi_fn is not None and variant == "lesion":
+                    stats_df = stats_df.copy()
+                    stats_df["tdi"] = tdi_fn(map_path)
                 tsv_path.parent.mkdir(parents=True, exist_ok=True)
                 stats_df.to_csv(str(tsv_path), sep="\t", index=False)
                 written[f"{variant}_mapstats_tsv"] = tsv_path
@@ -222,6 +230,7 @@ def extract_features_batch(
     atlases: List,
     output_dir,
     force: bool = False,
+    tdi_dir=None,
 ) -> Dict[str, Dict]:
     """Extract features for all subjects in a prep derivatives directory.
 
@@ -231,13 +240,20 @@ def extract_features_batch(
     atlases : list[AtlasSpec]
     output_dir : str or Path
     force : bool
+    tdi_dir : str or Path, optional
+        Override for the private TDI script/atlas directory (see
+        :func:`bcblib.tools.lesion_features._tdi.find_tdi_dir`).  When the
+        files are not found, TDI is skipped with a warning.
 
     Returns
     -------
     dict[str, dict]
         sub_id → dict of written file paths.
     """
+    from bcblib.tools.lesion_features._tdi import load_tdi_function
+
     prep_dir = Path(prep_dir)
+    tdi_fn = load_tdi_function(tdi_dir)
 
     sub_dirs = sorted(d for d in prep_dir.glob("sub-*") if d.is_dir())
     n_total = len(sub_dirs)
@@ -248,7 +264,7 @@ def extract_features_batch(
         print(f"  [{i}/{n_total}] sub-{sub_id} ...", end="", flush=True)
         t0 = time.perf_counter()
         before = len(results)
-        _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force)
+        _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn)
         elapsed = time.perf_counter() - t0
         n_written = len(results) - before
         if n_written:
@@ -259,21 +275,21 @@ def extract_features_batch(
     return results
 
 
-def _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force):
+def _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn=None):
     """Process all session or sessionless lesion directories for one subject."""
     lesion_dir = sub_dir / LF_SUBDIR
     if lesion_dir.is_dir():
-        _process_anat(sub_id, None, lesion_dir, atlases, output_dir, results, force)
+        _process_anat(sub_id, None, lesion_dir, atlases, output_dir, results, force, tdi_fn)
     for ses_dir in sorted(sub_dir.glob("ses-*")):
         if not ses_dir.is_dir():
             continue
         ses_id = ses_dir.name[4:]
         lesion_dir = ses_dir / LF_SUBDIR
         if lesion_dir.is_dir():
-            _process_anat(sub_id, ses_id, lesion_dir, atlases, output_dir, results, force)
+            _process_anat(sub_id, ses_id, lesion_dir, atlases, output_dir, results, force, tdi_fn)
 
 
-def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force):
+def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force, tdi_fn=None):
     """Locate all lesion + disconnectome pairs and run extract_features_one for each."""
     lesion_files = sorted(anat_dir.glob("*_label-lesion_mask.nii.gz"))
     if not lesion_files:
@@ -307,7 +323,7 @@ def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force)
         )
         written = extract_features_one(
             sub_id, ses_id, lesion_path, disco_path, atlases, output_dir,
-            lesion_desc=lesion_desc, force=force,
+            lesion_desc=lesion_desc, force=force, tdi_fn=tdi_fn,
         )
         if written:
             results[key] = written
