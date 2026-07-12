@@ -20,6 +20,9 @@ setup(
                       'tqdm', 'pandas', 'openpyxl', 'umap-learn', 'joblib', 'statsmodels', 'mne',
                       'pymc>=5', 'arviz', 'matplotlib', 'rich>=10',
                       'templateflow', 'nitransforms'],
+    extras_require={
+        'ants': ['antspy'],
+    },
     package_data={
         # If any package contains *.txt or *.rst files, include them:
         "": ["*.txt", "*.rst"],

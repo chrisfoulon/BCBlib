@@ -398,7 +398,7 @@ def _warp_directory_to_mni6(cache_dir: Path, source_space: str) -> None:
     print(f"Warping {len(niftis)} file(s) from {source_space} → MNI152NLin6Asym …")
     for f in niftis:
         img = nib.load(str(f))
-        warped = _apply_templateflow_warp(img, source_space, _MNI6_SPACE)
+        warped = _apply_templateflow_warp(img, source_space, _MNI6_SPACE, order=1)
         nib.save(warped, str(f))
     (cache_dir / _MNI6_READY_MARKER).touch()
 

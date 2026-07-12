@@ -12,6 +12,12 @@ import nitransforms.resampling as ntres
 
 from bcblib.tools.best_overlap import _check_image_space
 
+try:
+    import ants as _ants
+    _HAS_ANTS = True
+except ImportError:
+    _HAS_ANTS = False
+
 # Known canonical shapes for quick template family detection
 # (x, y, z) voxel counts at 1mm and 2mm resolutions
 _MNI6_SHAPES = {(182, 218, 182), (91, 109, 91)}
@@ -34,25 +40,8 @@ def _detect_template_family(img: nib.Nifti1Image) -> str:
     return "unknown"
 
 
-def _apply_templateflow_warp(
-    atlas_img: nib.Nifti1Image,
-    source_space: str,
-    target_space: str,
-) -> nib.Nifti1Image:
-    """Apply a TemplateFlow non-linear warp to resample *atlas_img*.
-
-    Parameters
-    ----------
-    atlas_img : Nifti1Image
-        Atlas image in *source_space*.
-    source_space, target_space : str
-        TemplateFlow template identifiers.
-
-    Returns
-    -------
-    nibabel.Nifti1Image
-        Atlas resampled into *target_space*.
-    """
+def _get_templateflow_warp_path_and_ref(source_space: str, target_space: str):
+    """Return (warp_path_str, ref_img) for a TemplateFlow cross-template warp."""
     warp_files = tflow.get(
         target_space,
         suffix="xfm",
@@ -65,19 +54,84 @@ def _apply_templateflow_warp(
             f"Check that the templateflow data cache is populated."
         )
     warp_path = warp_files if isinstance(warp_files, str) else str(warp_files)
-
     target_ref = tflow.get(target_space, resolution=1, desc="brain", suffix="T1w")
     if not target_ref:
         target_ref = tflow.get(target_space, resolution=1, suffix="T1w")
     ref_img = nib.load(str(target_ref))
+    return warp_path, ref_img
+
+
+def _apply_templateflow_warp(
+    atlas_img: nib.Nifti1Image,
+    source_space: str,
+    target_space: str,
+    order: int = 0,
+) -> nib.Nifti1Image:
+    """Apply a TemplateFlow non-linear warp to resample *atlas_img*.
+
+    Parameters
+    ----------
+    atlas_img : Nifti1Image
+        Atlas image in *source_space*.
+    source_space, target_space : str
+        TemplateFlow template identifiers.
+    order : int
+        Interpolation order passed to nitransforms (0 = nearest-neighbour,
+        1 = trilinear).  Use 0 for binary masks, 1 for continuous probability
+        maps.
+
+    Returns
+    -------
+    nibabel.Nifti1Image
+        Atlas resampled into *target_space*.
+    """
+    warp_path, ref_img = _get_templateflow_warp_path_and_ref(source_space, target_space)
 
     # TemplateFlow H5 files are ITK composite transforms (affine + displacement
     # field).  ITKCompositeH5.from_filename returns a list; element [1] is the
     # displacement field as a Nifti1Image.  We apply it via the current API.
     composite = ITKCompositeH5.from_filename(warp_path)
     disp_xfm = DenseFieldTransform(composite[1])
-    resampled = ntres.apply(disp_xfm, atlas_img, reference=ref_img, order=0)
+    resampled = ntres.apply(disp_xfm, atlas_img, reference=ref_img, order=order)
     return nib.Nifti1Image(resampled.get_fdata().astype(np.float32), ref_img.affine)
+
+
+def warp_binary_mask(
+    mask_img: nib.Nifti1Image,
+    source_space: str,
+    target_space: str,
+) -> nib.Nifti1Image:
+    """Warp a binary mask between TemplateFlow spaces.
+
+    Uses ANTs ``genericLabel`` interpolation when ANTsPy is installed
+    (``pip install bcblib[ants]``), which is recommended for binary masks as
+    it preserves label boundaries better than nearest-neighbour.  Falls back
+    to nearest-neighbour via nitransforms when ANTs is not available.
+
+    Parameters
+    ----------
+    mask_img : Nifti1Image
+        Binary mask in *source_space*.
+    source_space, target_space : str
+        TemplateFlow template identifiers.
+
+    Returns
+    -------
+    nibabel.Nifti1Image
+        Mask resampled into *target_space*.
+    """
+    if _HAS_ANTS:
+        warp_path, ref_img = _get_templateflow_warp_path_and_ref(source_space, target_space)
+        moving = _ants.from_nibabel(mask_img)
+        fixed = _ants.from_nibabel(ref_img)
+        result = _ants.apply_transforms(
+            fixed=fixed,
+            moving=moving,
+            transformlist=[warp_path],
+            interpolator="genericLabel",
+        )
+        return _ants.to_nibabel(result)
+    return _apply_templateflow_warp(mask_img, source_space, target_space, order=0)
 
 
 def check_and_resample(

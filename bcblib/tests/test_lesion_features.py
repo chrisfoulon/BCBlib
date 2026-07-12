@@ -347,7 +347,7 @@ class TestPreprocess:
         fake_warped = _make_mni6_1mm()  # same orientation as input → no reorientation
 
         with patch(
-            "bcblib.tools.lesion_features._preprocess._apply_templateflow_warp",
+            "bcblib.tools.lesion_features._preprocess.warp_binary_mask",
             return_value=fake_warped,
         ) as mock_warp:
             result = normalise_lesion_to_mni6(img_2009c, "MNI152NLin2009cAsym", 1)
@@ -382,7 +382,7 @@ class TestPreprocess:
         fake_warped = _make_nifti(np.zeros((182, 218, 182), dtype=np.float32))
 
         with patch(
-            "bcblib.tools.lesion_features._preprocess._apply_templateflow_warp",
+            "bcblib.tools.lesion_features._preprocess.warp_binary_mask",
             return_value=fake_warped,
         ):
             result = normalise_lesion_to_mni6(img_2009c, "MNI152NLin2009cAsym", 2)

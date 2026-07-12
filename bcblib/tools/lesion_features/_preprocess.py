@@ -8,7 +8,7 @@ import nibabel as nib
 import numpy as np
 from nilearn.image import resample_img
 
-from bcblib.tools.damage_profile._space import _apply_templateflow_warp
+from bcblib.tools.damage_profile._space import warp_binary_mask
 from bcblib.tools.lesion_features._constants import TARGET_RES, TARGET_SPACE
 
 # MNI152NLin6Asym canonical shapes at 1 mm and 2 mm.
@@ -141,7 +141,7 @@ def normalise_lesion_to_mni6(
     if in_mni2009c:
         # warp to MNI6 1 mm (output inherits TemplateFlow's orientation
         # convention, which may differ from the input).
-        warped = _apply_templateflow_warp(img, source_space, TARGET_SPACE)
+        warped = warp_binary_mask(img, source_space, TARGET_SPACE)
         # restore input's orientation convention via nibabel reorientation
         in_ornt = nib.io_orientation(img.affine)
         out_ornt = nib.io_orientation(warped.affine)
