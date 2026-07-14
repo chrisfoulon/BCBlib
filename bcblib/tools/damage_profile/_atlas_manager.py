@@ -579,12 +579,13 @@ def get_preset_atlas(
 
 
 def _find_trk_dir(root: Path) -> Optional[Path]:
-    """Return the first directory under *root* that directly contains .trk files."""
-    if any(root.glob("*.trk")):
+    """Return *root* if any .trk or .trk.gz files exist anywhere below it, else None.
+
+    TRK zips may contain category subdirectories; we search recursively so the
+    caller always receives the root of the extracted tree.
+    """
+    if any(root.rglob("*.trk.gz")) or any(root.rglob("*.trk")):
         return root
-    for sub in sorted(root.iterdir()):
-        if sub.is_dir() and any(sub.glob("*.trk")):
-            return sub
     return None
 
 

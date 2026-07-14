@@ -607,9 +607,9 @@ class TestStreamlineRatio:
 
     def _make_trk_dir(self, tmp_path):
         trk_dir = tmp_path / "trk"
-        trk_dir.mkdir()
-        (trk_dir / "AF_L.trk").touch()
-        (trk_dir / "AF_R.trk").touch()
+        (trk_dir / "association").mkdir(parents=True)
+        (trk_dir / "association" / "AF_L.trk.gz").touch()
+        (trk_dir / "association" / "AF_R.trk.gz").touch()
         return trk_dir
 
     def _make_atlas_spec(self, tmp_path, name="yeh_hcp1065"):
@@ -633,7 +633,7 @@ class TestStreamlineRatio:
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         with patch("bcblib.tools.lesion_features._streamline._HAS_DIPY", True):
-            with pytest.warns(RuntimeWarning, match="No .trk files"):
+            with pytest.warns(RuntimeWarning, match="No .trk"):
                 fn = load_streamline_ratio_function(empty_dir)
         assert fn is None
 
@@ -644,7 +644,7 @@ class TestStreamlineRatio:
             fn = load_streamline_ratio_function(trk_dir)
         assert callable(fn)
 
-    def test_extract_features_one_adds_streamline_ratio_to_yeh_lesion_csv(self, tmp_path):
+    def test_extract_features_one_writes_streamline_csv_for_yeh_lesion(self, tmp_path):
         import pandas as pd
         from bcblib.tools.lesion_features._pipeline import extract_features_one
 
@@ -656,7 +656,7 @@ class TestStreamlineRatio:
         _save_nifti(lesion_path, lesion)
         _save_nifti(disco_path, lesion)
 
-        mock_ratio = pd.DataFrame({"region_name": ["some_tract"], "streamline_ratio": [0.25]})
+        mock_ratio = pd.DataFrame({"tract": ["AF_L"], "streamline_ratio": [0.25]})
         streamline_fn = lambda p: mock_ratio  # noqa: E731
 
         written = extract_features_one(
@@ -664,13 +664,16 @@ class TestStreamlineRatio:
             streamline_fn=streamline_fn,
         )
 
-        lesion_csv = pd.read_csv(written["lesion_yeh_hcp1065_csv"])
-        assert "streamline_ratio" in lesion_csv.columns
+        # Streamline ratios go to a separate CSV, not merged into the atlas CSV
+        assert "lesion_yeh_hcp1065_streamline_csv" in written
+        sl_csv = pd.read_csv(written["lesion_yeh_hcp1065_streamline_csv"])
+        assert list(sl_csv.columns) == ["tract", "streamline_ratio"]
+        assert sl_csv["streamline_ratio"].iloc[0] == 0.25
 
-        disco_csv = pd.read_csv(written["disconnectome_yeh_hcp1065_csv"])
-        assert "streamline_ratio" not in disco_csv.columns
+        # Disconnectome should not have a streamline CSV
+        assert "disconnectome_yeh_hcp1065_streamline_csv" not in written
 
-    def test_extract_features_one_no_streamline_ratio_for_other_atlas(self, tmp_path):
+    def test_extract_features_one_no_streamline_csv_for_other_atlas(self, tmp_path):
         import pandas as pd
         from bcblib.tools.lesion_features._pipeline import extract_features_one
 
@@ -680,7 +683,7 @@ class TestStreamlineRatio:
         lesion_path = tmp_path / "sub-001_label-lesion_mask.nii.gz"
         _save_nifti(lesion_path, lesion)
 
-        mock_ratio = pd.DataFrame({"region_name": ["t"], "streamline_ratio": [0.1]})
+        mock_ratio = pd.DataFrame({"tract": ["AF_L"], "streamline_ratio": [0.1]})
         streamline_fn = lambda p: mock_ratio  # noqa: E731
 
         written = extract_features_one(
@@ -688,8 +691,8 @@ class TestStreamlineRatio:
             streamline_fn=streamline_fn,
         )
 
-        csv = pd.read_csv(written["lesion_other_atlas_csv"])
-        assert "streamline_ratio" not in csv.columns
+        # streamline_fn only fires when yeh_hcp1065 is in the atlas list
+        assert "lesion_yeh_hcp1065_streamline_csv" not in written
 
 
 # ---------------------------------------------------------------------------

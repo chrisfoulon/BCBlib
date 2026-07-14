@@ -10,28 +10,43 @@ import nibabel as nib
 import numpy as np
 
 try:
-    from dipy.io.streamline import load_tractogram as _load_tractogram
     from dipy.tracking.utils import target as _dipy_target
     _HAS_DIPY = True
 except ImportError:
     _HAS_DIPY = False
 
+# Yeh HCP1065 TRK files use abbreviated names (AF_L, CST_L …) that differ
+# from the probability atlas NIfTI names (Arcuate_Fasciculus_L …).  Streamline
+# ratios are therefore written to a *separate* CSV rather than merged into the
+# atlas overlap CSV.  The TRK zip organises files into category subdirectories
+# (association/, cerebellum/, …) and uses the .trk.gz extension.
+
+
+def _iter_trk_files(tracts_dir: Path):
+    """Yield (region_name, path) for every .trk.gz / .trk file under tracts_dir."""
+    for path in sorted(tracts_dir.rglob("*.trk.gz")):
+        yield path.name[:-7], path
+    for path in sorted(tracts_dir.rglob("*.trk")):
+        if not path.name.endswith(".trk.gz"):
+            yield path.name[:-4], path
+
 
 def _compute_streamline_ratio(roi_path: str, tracts_dir: str):
-    """Return a DataFrame with region_name / streamline_ratio per tract.
+    """Return a DataFrame with tract / streamline_ratio per tractogram.
 
     Parameters
     ----------
     roi_path : str
         Path to a binary lesion mask in the same space as the TRK files.
     tracts_dir : str
-        Directory containing ``.trk`` files.
+        Root directory containing TRK (or TRK.gz) files, possibly in
+        category subdirectories.
 
     Returns
     -------
     pandas.DataFrame or None
-        Columns: ``region_name``, ``streamline_ratio``.  ``None`` if no
-        tractograms could be processed.
+        Columns: ``tract``, ``streamline_ratio``.  ``None`` if no tractograms
+        could be processed.
     """
     import pandas as pd
 
@@ -42,29 +57,28 @@ def _compute_streamline_ratio(roi_path: str, tracts_dir: str):
     affine = roi.affine
 
     scores = {}
-    for fname in sorted(os.listdir(tracts_dir)):
-        if not fname.endswith(".trk"):
-            continue
-        tract_path = os.path.join(tracts_dir, fname)
+    for region, path in _iter_trk_files(Path(tracts_dir)):
         try:
-            sft = _load_tractogram(tract_path, reference="same", bbox_valid_check=False)
+            # nibabel natively supports .trk.gz via gzip; dipy load_tractogram does not.
+            tfile = nib.streamlines.load(str(path), lazy_load=False)
+            streamlines = tfile.streamlines
         except Exception as exc:
-            warnings.warn(f"Could not load {fname}: {exc}", RuntimeWarning)
+            warnings.warn(f"Could not load {path.name}: {exc}", RuntimeWarning)
             continue
-        if len(sft.streamlines) == 0:
+        if len(streamlines) == 0:
             continue
         intersecting = list(_dipy_target(
-            streamlines=sft.streamlines,
+            streamlines=streamlines,
             target_mask=roi_data,
             affine=affine,
             include=True,
         ))
-        scores[fname[:-4]] = len(intersecting) / len(sft.streamlines)
+        scores[region] = len(intersecting) / len(streamlines)
 
     if not scores:
         return None
     return pd.DataFrame({
-        "region_name": list(scores.keys()),
+        "tract": list(scores.keys()),
         "streamline_ratio": list(scores.values()),
     })
 
@@ -74,18 +88,24 @@ def load_streamline_ratio_function(trk_dir) -> Optional[Callable]:
 
     The callable warps the binary lesion mask from MNI152NLin6Asym to
     MNI152NLin2009cAsym (the space of the Yeh HCP1065 TRK files) before
-    running the streamline intersection computation.
+    computing streamline intersections.
+
+    The returned DataFrame has columns ``tract`` (abbreviated HCP1065 name,
+    e.g. ``AF_L``) and ``streamline_ratio``.  It is written to a *separate*
+    CSV from the probability atlas overlap results because the two datasets
+    use different naming conventions.
 
     Parameters
     ----------
     trk_dir : str or Path
-        Directory containing the HCP1065 ``.trk`` files.
+        Root directory containing the HCP1065 ``.trk.gz`` files (possibly in
+        category subdirectories).
 
     Returns
     -------
     callable or None
-        Returns ``None`` (with a ``RuntimeWarning``) when dipy is not
-        installed or no ``.trk`` files are found in *trk_dir*.
+        Returns ``None`` (with a ``RuntimeWarning``) when dipy is not installed
+        or no TRK files are found under *trk_dir*.
     """
     if not _HAS_DIPY:
         warnings.warn(
@@ -96,9 +116,11 @@ def load_streamline_ratio_function(trk_dir) -> Optional[Callable]:
         return None
 
     trk_dir = Path(trk_dir)
-    if not trk_dir.is_dir() or not any(trk_dir.glob("*.trk")):
+    has_trks = any(trk_dir.rglob("*.trk.gz")) or any(trk_dir.rglob("*.trk"))
+    if not trk_dir.is_dir() or not has_trks:
         warnings.warn(
-            f"No .trk files found in {trk_dir}; streamline ratio will be skipped.",
+            f"No .trk or .trk.gz files found under {trk_dir}; "
+            "streamline ratio will be skipped.",
             RuntimeWarning,
         )
         return None

@@ -165,8 +165,10 @@ def extract_features_one(
     streamline_fn : callable or None
         ``lesion_path -> DataFrame``, from
         :func:`_streamline.load_streamline_ratio_function`.  Warps the lesion
-        to MNI2009cAsym and returns per-tract streamline ratios.  Merged into
-        the ``yeh_hcp1065`` lesion CSV on ``region_name`` when given.
+        to MNI2009cAsym and returns per-tract streamline ratios.  Written to a
+        *separate* CSV (``…_atlas-yeh_hcp1065_streamline.csv``) because the TRK
+        files use abbreviated names (``AF_L``) that differ from the probability
+        atlas names (``Arcuate_Fasciculus_L``).
 
     Returns
     -------
@@ -176,6 +178,8 @@ def extract_features_one(
 
     output_dir = Path(output_dir)
     written: Dict[str, Path] = {}
+
+    _has_yeh = any(spec.name == "yeh_hcp1065" for spec in atlases)
 
     for variant, map_path in (("lesion", lesion_path), ("disconnectome", disco_path)):
         if map_path is None:
@@ -198,47 +202,53 @@ def extract_features_one(
                 ).exists()
             ]
 
-        if not atlases_to_run and not need_tsv:
+        # Streamline CSV is independent of damage_profile; check it separately.
+        sl_csv_path = None
+        need_sl_csv = False
+        if streamline_fn is not None and variant == "lesion" and _has_yeh:
+            sl_csv_path = build_lf_csv_path(
+                output_dir, sub_id, ses_id, TARGET_SPACE,
+                variant, "yeh_hcp1065_streamline", lesion_desc=lesion_desc,
+            )
+            need_sl_csv = force or not sl_csv_path.exists()
+
+        if not atlases_to_run and not need_tsv and not need_sl_csv:
             continue
 
-        # When only the TSV is missing, pass the full atlas list so that
-        # damage_profile still returns _subject_map_stats.
-        dp_atlases = atlases_to_run if atlases_to_run else atlases
-        dp_results = damage_profile(map_path, dp_atlases)
+        if atlases_to_run or need_tsv:
+            # When only the TSV is missing, pass the full atlas list so that
+            # damage_profile still returns _subject_map_stats.
+            dp_atlases = atlases_to_run if atlases_to_run else atlases
+            dp_results = damage_profile(map_path, dp_atlases)
 
-        for atlas_spec in atlases_to_run:
-            df = dp_results.get(atlas_spec.name)
-            if df is None:
-                continue
-            if (
-                streamline_fn is not None
-                and atlas_spec.name == "yeh_hcp1065"
-                and variant == "lesion"
-            ):
-                ratio_df = streamline_fn(map_path)
-                if ratio_df is not None and not ratio_df.empty:
-                    df = df.merge(
-                        ratio_df[["region_name", "streamline_ratio"]],
-                        on="region_name",
-                        how="left",
-                    )
-            csv_path = build_lf_csv_path(
-                output_dir, sub_id, ses_id, TARGET_SPACE,
-                variant, atlas_spec.name, lesion_desc=lesion_desc,
-            )
-            csv_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(str(csv_path), index=False)
-            written[f"{variant}_{atlas_spec.name}_csv"] = csv_path
+            for atlas_spec in atlases_to_run:
+                df = dp_results.get(atlas_spec.name)
+                if df is None:
+                    continue
+                csv_path = build_lf_csv_path(
+                    output_dir, sub_id, ses_id, TARGET_SPACE,
+                    variant, atlas_spec.name, lesion_desc=lesion_desc,
+                )
+                csv_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_csv(str(csv_path), index=False)
+                written[f"{variant}_{atlas_spec.name}_csv"] = csv_path
 
-        if need_tsv:
-            stats_df = dp_results.get("_subject_map_stats")
-            if stats_df is not None:
-                if tdi_fn is not None and variant == "lesion":
-                    stats_df = stats_df.copy()
-                    stats_df["tdi"] = tdi_fn(map_path)
-                tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                stats_df.to_csv(str(tsv_path), sep="\t", index=False)
-                written[f"{variant}_mapstats_tsv"] = tsv_path
+            if need_tsv:
+                stats_df = dp_results.get("_subject_map_stats")
+                if stats_df is not None:
+                    if tdi_fn is not None and variant == "lesion":
+                        stats_df = stats_df.copy()
+                        stats_df["tdi"] = tdi_fn(map_path)
+                    tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    stats_df.to_csv(str(tsv_path), sep="\t", index=False)
+                    written[f"{variant}_mapstats_tsv"] = tsv_path
+
+        if need_sl_csv:
+            ratio_df = streamline_fn(map_path)
+            if ratio_df is not None and not ratio_df.empty:
+                sl_csv_path.parent.mkdir(parents=True, exist_ok=True)
+                ratio_df.to_csv(str(sl_csv_path), index=False)
+                written[f"{variant}_yeh_hcp1065_streamline_csv"] = sl_csv_path
 
     return written
 
