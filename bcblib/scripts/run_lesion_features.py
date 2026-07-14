@@ -131,6 +131,7 @@ def main(argv=None):
     print(f"Extracting features from {prep_dir} → {output_dir}")
     results = extract_features_batch(
         prep_dir, atlas_specs, output_dir, force=force, tdi_dir=args.tdi_dir,
+        assume_yes=args.assume_yes,
     )
     print(f"Processed {len(results)} subject(s).")
 

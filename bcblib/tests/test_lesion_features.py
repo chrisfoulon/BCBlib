@@ -600,7 +600,100 @@ class TestTdi:
 
 
 # ---------------------------------------------------------------------------
-# T4 — Preprocessing pipeline orchestration
+# T4 — Streamline ratio
+# ---------------------------------------------------------------------------
+
+class TestStreamlineRatio:
+
+    def _make_trk_dir(self, tmp_path):
+        trk_dir = tmp_path / "trk"
+        trk_dir.mkdir()
+        (trk_dir / "AF_L.trk").touch()
+        (trk_dir / "AF_R.trk").touch()
+        return trk_dir
+
+    def _make_atlas_spec(self, tmp_path, name="yeh_hcp1065"):
+        from bcblib.tools.damage_profile import AtlasSpec
+        arr = np.zeros((182, 218, 182), dtype=np.float32)
+        arr[90, 109, 90] = 1.0
+        atlas_path = tmp_path / f"{name}.nii.gz"
+        _save_nifti(atlas_path, arr)
+        return AtlasSpec(source=str(atlas_path), name=name)
+
+    def test_returns_none_without_dipy(self, tmp_path):
+        from bcblib.tools.lesion_features._streamline import load_streamline_ratio_function
+        trk_dir = self._make_trk_dir(tmp_path)
+        with patch("bcblib.tools.lesion_features._streamline._HAS_DIPY", False):
+            with pytest.warns(RuntimeWarning, match="dipy"):
+                fn = load_streamline_ratio_function(trk_dir)
+        assert fn is None
+
+    def test_returns_none_if_no_trk_files(self, tmp_path):
+        from bcblib.tools.lesion_features._streamline import load_streamline_ratio_function
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        with patch("bcblib.tools.lesion_features._streamline._HAS_DIPY", True):
+            with pytest.warns(RuntimeWarning, match="No .trk files"):
+                fn = load_streamline_ratio_function(empty_dir)
+        assert fn is None
+
+    def test_returns_callable_when_ready(self, tmp_path):
+        from bcblib.tools.lesion_features._streamline import load_streamline_ratio_function
+        trk_dir = self._make_trk_dir(tmp_path)
+        with patch("bcblib.tools.lesion_features._streamline._HAS_DIPY", True):
+            fn = load_streamline_ratio_function(trk_dir)
+        assert callable(fn)
+
+    def test_extract_features_one_adds_streamline_ratio_to_yeh_lesion_csv(self, tmp_path):
+        import pandas as pd
+        from bcblib.tools.lesion_features._pipeline import extract_features_one
+
+        spec = self._make_atlas_spec(tmp_path)
+        lesion = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion[90, 109, 90] = 1.0
+        lesion_path = tmp_path / "sub-001_label-lesion_mask.nii.gz"
+        disco_path = tmp_path / "sub-001_desc-disconnectome.nii.gz"
+        _save_nifti(lesion_path, lesion)
+        _save_nifti(disco_path, lesion)
+
+        mock_ratio = pd.DataFrame({"region_name": ["some_tract"], "streamline_ratio": [0.25]})
+        streamline_fn = lambda p: mock_ratio  # noqa: E731
+
+        written = extract_features_one(
+            "001", None, lesion_path, disco_path, [spec], tmp_path / "out",
+            streamline_fn=streamline_fn,
+        )
+
+        lesion_csv = pd.read_csv(written["lesion_yeh_hcp1065_csv"])
+        assert "streamline_ratio" in lesion_csv.columns
+
+        disco_csv = pd.read_csv(written["disconnectome_yeh_hcp1065_csv"])
+        assert "streamline_ratio" not in disco_csv.columns
+
+    def test_extract_features_one_no_streamline_ratio_for_other_atlas(self, tmp_path):
+        import pandas as pd
+        from bcblib.tools.lesion_features._pipeline import extract_features_one
+
+        spec = self._make_atlas_spec(tmp_path, name="other_atlas")
+        lesion = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion[90, 109, 90] = 1.0
+        lesion_path = tmp_path / "sub-001_label-lesion_mask.nii.gz"
+        _save_nifti(lesion_path, lesion)
+
+        mock_ratio = pd.DataFrame({"region_name": ["t"], "streamline_ratio": [0.1]})
+        streamline_fn = lambda p: mock_ratio  # noqa: E731
+
+        written = extract_features_one(
+            "001", None, lesion_path, None, [spec], tmp_path / "out",
+            streamline_fn=streamline_fn,
+        )
+
+        csv = pd.read_csv(written["lesion_other_atlas_csv"])
+        assert "streamline_ratio" not in csv.columns
+
+
+# ---------------------------------------------------------------------------
+# T5 — Preprocessing pipeline orchestration
 # ---------------------------------------------------------------------------
 
 class TestPipelines:

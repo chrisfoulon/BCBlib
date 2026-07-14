@@ -51,6 +51,8 @@ class AtlasInfo:
     label_file: Optional[str] = None
     nifti_path: Optional[str] = None
     label_url: Optional[str] = None
+    trk_url: Optional[str] = None
+    trk_size_mb: float = 0.0
 
 
 PRESET_ATLASES: Dict[str, AtlasInfo] = {
@@ -130,6 +132,11 @@ PRESET_ATLASES: Dict[str, AtlasInfo] = {
         space="MNI152NLin2009cAsym",
         citation="Yeh et al. (2022) NeuroImage 249:118931",
         nifti_path="prob",
+        trk_url=(
+            "https://github.com/data-others/atlas/releases/download/"
+            "hcp1065/hcp1065_avg_tracts_trk.zip"
+        ),
+        trk_size_mb=588.0,
     ),
     "aal": AtlasInfo(
         full_name="Automated Anatomical Labeling Atlas (AAL, 116 regions)",
@@ -569,3 +576,73 @@ def get_preset_atlas(
         space=info.space,
     )
     return load_atlas(spec)
+
+
+def _find_trk_dir(root: Path) -> Optional[Path]:
+    """Return the first directory under *root* that directly contains .trk files."""
+    if any(root.glob("*.trk")):
+        return root
+    for sub in sorted(root.iterdir()):
+        if sub.is_dir() and any(sub.glob("*.trk")):
+            return sub
+    return None
+
+
+def get_preset_trk_dir(name: str, assume_yes: bool = False) -> Optional[Path]:
+    """Return the directory of TRK files for a preset atlas, downloading if needed.
+
+    Parameters
+    ----------
+    name : str
+        Key from :data:`PRESET_ATLASES` (only ``'yeh_hcp1065'`` currently has TRKs).
+    assume_yes : bool
+        Skip the download consent prompt.
+
+    Returns
+    -------
+    Path or None
+        Directory containing ``.trk`` files, or ``None`` if unavailable.
+    """
+    if name not in PRESET_ATLASES:
+        raise KeyError(f"Unknown preset atlas: {name!r}")
+
+    info = PRESET_ATLASES[name]
+    if not info.trk_url:
+        return None
+
+    trk_root = get_atlas_dir() / name / "trk"
+
+    if trk_root.exists():
+        found = _find_trk_dir(trk_root)
+        if found is not None:
+            return found
+
+    if not assume_yes:
+        answer = input(
+            f"\nTractography files for '{info.full_name}' (~{info.trk_size_mb:.0f} MB) "
+            f"are not in the local cache.\nDownload to {trk_root}? [y/N] "
+        )
+        if answer.strip().lower() not in ("y", "yes"):
+            warnings.warn(
+                f"TRK download declined for '{name}'; streamline ratio will be skipped.",
+                RuntimeWarning,
+            )
+            return None
+
+    trk_root.mkdir(parents=True, exist_ok=True)
+    tmp = trk_root / "_download.zip"
+    print(f"Downloading TRK files for {info.full_name} ({info.trk_size_mb:.0f} MB) …")
+    urllib.request.urlretrieve(info.trk_url, tmp)
+    print("Extracting …")
+    with zipfile.ZipFile(tmp) as zf:
+        zf.extractall(trk_root)
+    tmp.unlink()
+
+    found = _find_trk_dir(trk_root)
+    if found is None:
+        warnings.warn(
+            f"No .trk files found after extracting to {trk_root}; "
+            "streamline ratio will be skipped.",
+            RuntimeWarning,
+        )
+    return found

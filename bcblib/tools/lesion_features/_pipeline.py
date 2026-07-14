@@ -143,6 +143,7 @@ def extract_features_one(
     lesion_desc: Optional[str] = None,
     force: bool = False,
     tdi_fn=None,
+    streamline_fn=None,
 ) -> Dict[str, Path]:
     """Extract lesion and disconnectome features for one subject.
 
@@ -161,6 +162,11 @@ def extract_features_one(
         ``lesion_path -> tdi_value``, from :func:`_tdi.load_tdi_function`.
         Adds a ``tdi`` column to the lesion mapstats TSV when given.  Not
         applied to the disconnectome map.
+    streamline_fn : callable or None
+        ``lesion_path -> DataFrame``, from
+        :func:`_streamline.load_streamline_ratio_function`.  Warps the lesion
+        to MNI2009cAsym and returns per-tract streamline ratios.  Merged into
+        the ``yeh_hcp1065`` lesion CSV on ``region_name`` when given.
 
     Returns
     -------
@@ -204,6 +210,18 @@ def extract_features_one(
             df = dp_results.get(atlas_spec.name)
             if df is None:
                 continue
+            if (
+                streamline_fn is not None
+                and atlas_spec.name == "yeh_hcp1065"
+                and variant == "lesion"
+            ):
+                ratio_df = streamline_fn(map_path)
+                if ratio_df is not None and not ratio_df.empty:
+                    df = df.merge(
+                        ratio_df[["region_name", "streamline_ratio"]],
+                        on="region_name",
+                        how="left",
+                    )
             csv_path = build_lf_csv_path(
                 output_dir, sub_id, ses_id, TARGET_SPACE,
                 variant, atlas_spec.name, lesion_desc=lesion_desc,
@@ -231,6 +249,7 @@ def extract_features_batch(
     output_dir,
     force: bool = False,
     tdi_dir=None,
+    assume_yes: bool = False,
 ) -> Dict[str, Dict]:
     """Extract features for all subjects in a prep derivatives directory.
 
@@ -244,6 +263,9 @@ def extract_features_batch(
         Override for the private TDI script/atlas directory (see
         :func:`bcblib.tools.lesion_features._tdi.find_tdi_dir`).  When the
         files are not found, TDI is skipped with a warning.
+    assume_yes : bool
+        Skip download consent prompts for TRK files (mirrors the atlas
+        ``assume_yes`` behaviour).
 
     Returns
     -------
@@ -251,9 +273,18 @@ def extract_features_batch(
         sub_id → dict of written file paths.
     """
     from bcblib.tools.lesion_features._tdi import load_tdi_function
+    from bcblib.tools.lesion_features._streamline import load_streamline_ratio_function
 
     prep_dir = Path(prep_dir)
     tdi_fn = load_tdi_function(tdi_dir)
+
+    streamline_fn = None
+    atlas_names = {spec.name for spec in atlases}
+    if "yeh_hcp1065" in atlas_names:
+        from bcblib.tools.damage_profile._atlas_manager import get_preset_trk_dir
+        trk_dir = get_preset_trk_dir("yeh_hcp1065", assume_yes=assume_yes)
+        if trk_dir is not None:
+            streamline_fn = load_streamline_ratio_function(trk_dir)
 
     sub_dirs = sorted(d for d in prep_dir.glob("sub-*") if d.is_dir())
     n_total = len(sub_dirs)
@@ -264,7 +295,9 @@ def extract_features_batch(
         print(f"  [{i}/{n_total}] sub-{sub_id} ...", end="", flush=True)
         t0 = time.perf_counter()
         before = len(results)
-        _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn)
+        _process_sub_dirs(
+            sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn, streamline_fn
+        )
         elapsed = time.perf_counter() - t0
         n_written = len(results) - before
         if n_written:
@@ -275,21 +308,32 @@ def extract_features_batch(
     return results
 
 
-def _process_sub_dirs(sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn=None):
+def _process_sub_dirs(
+    sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn=None, streamline_fn=None
+):
     """Process all session or sessionless lesion directories for one subject."""
     lesion_dir = sub_dir / LF_SUBDIR
     if lesion_dir.is_dir():
-        _process_anat(sub_id, None, lesion_dir, atlases, output_dir, results, force, tdi_fn)
+        _process_anat(
+            sub_id, None, lesion_dir, atlases, output_dir, results, force,
+            tdi_fn, streamline_fn,
+        )
     for ses_dir in sorted(sub_dir.glob("ses-*")):
         if not ses_dir.is_dir():
             continue
         ses_id = ses_dir.name[4:]
         lesion_dir = ses_dir / LF_SUBDIR
         if lesion_dir.is_dir():
-            _process_anat(sub_id, ses_id, lesion_dir, atlases, output_dir, results, force, tdi_fn)
+            _process_anat(
+                sub_id, ses_id, lesion_dir, atlases, output_dir, results, force,
+                tdi_fn, streamline_fn,
+            )
 
 
-def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force, tdi_fn=None):
+def _process_anat(
+    sub_id, ses_id, anat_dir, atlases, output_dir, results, force,
+    tdi_fn=None, streamline_fn=None,
+):
     """Locate all lesion + disconnectome pairs and run extract_features_one for each."""
     lesion_files = sorted(anat_dir.glob("*_label-lesion_mask.nii.gz"))
     if not lesion_files:
@@ -324,6 +368,7 @@ def _process_anat(sub_id, ses_id, anat_dir, atlases, output_dir, results, force,
         written = extract_features_one(
             sub_id, ses_id, lesion_path, disco_path, atlases, output_dir,
             lesion_desc=lesion_desc, force=force, tdi_fn=tdi_fn,
+            streamline_fn=streamline_fn,
         )
         if written:
             results[key] = written

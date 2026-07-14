@@ -22,6 +22,8 @@ setup(
                       'templateflow', 'nitransforms'],
     extras_require={
         'ants': ['antspy'],
+        'dipy': ['dipy'],
+        'ebrains': ['antspy', 'dipy'],
     },
     package_data={
         # If any package contains *.txt or *.rst files, include them:
