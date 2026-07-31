@@ -110,14 +110,16 @@ class TestBidsUtils:
         from bcblib.tools.lesion_features._bids import build_prep_path
         p = build_prep_path("/prep", "001", None, "mask", "label-lesion")
         assert p.name == "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz"
-        assert p.parent.name == "lesion"
-        assert p.parent.parent.name == "sub-001"
+        # flattened: no per-subject subdir, file sits directly under sub-001/
+        assert p.parent.name == "sub-001"
+        assert p.parent.parent.name == "prep"
 
     def test_build_prep_path_with_ses(self):
         from bcblib.tools.lesion_features._bids import build_prep_path
         p = build_prep_path("/prep", "001", "01", "mask", "label-lesion")
         assert "ses-01" in p.name
-        assert p.parent.parent.name == "ses-01"
+        # flattened: file sits directly under sub-001/ses-01/
+        assert p.parent.name == "ses-01"
 
     def test_build_prep_path_with_lesion_desc(self):
         from bcblib.tools.lesion_features._bids import build_prep_path
@@ -845,7 +847,7 @@ class TestPipelines:
         prep = tmp_path / "prep"
 
         for sub in ("001", "002"):
-            lesion_dir = prep / f"sub-{sub}" / "lesion"
+            lesion_dir = prep / f"sub-{sub}"
             lesion_dir.mkdir(parents=True)
             _save_nifti(
                 lesion_dir / f"sub-{sub}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
@@ -870,7 +872,7 @@ class TestPipelines:
         prep = tmp_path / "prep"
 
         for sub, ses in (("001", "01"), ("002", "02")):
-            lesion_dir = prep / f"sub-{sub}" / f"ses-{ses}" / "lesion"
+            lesion_dir = prep / f"sub-{sub}" / f"ses-{ses}"
             lesion_dir.mkdir(parents=True)
             _save_nifti(
                 lesion_dir / f"sub-{sub}_ses-{ses}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
@@ -890,7 +892,7 @@ class TestPipelines:
         from bcblib.tools.lesion_features._pipeline import extract_features_batch
         spec = self._make_atlas_spec(tmp_path)
         prep = tmp_path / "prep"
-        lesion_dir = prep / "sub-001" / "lesion"
+        lesion_dir = prep / "sub-001"
         lesion_dir.mkdir(parents=True)
         # no lesion file — should silently skip
 
@@ -904,7 +906,7 @@ class TestPipelines:
         lesion_data[90, 109, 90] = 1.0
         prep = tmp_path / "prep"
 
-        lesion_dir = prep / "sub-001" / "lesion"
+        lesion_dir = prep / "sub-001"
         lesion_dir.mkdir(parents=True)
         _save_nifti(
             lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
@@ -955,7 +957,7 @@ class TestPipelines:
         lesion_data = np.zeros((182, 218, 182), dtype=np.float32)
         lesion_data[90, 109, 90] = 1.0
         prep = tmp_path / "prep"
-        lesion_dir = prep / "sub-001" / "lesion"
+        lesion_dir = prep / "sub-001"
         lesion_dir.mkdir(parents=True)
         _save_nifti(
             lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",

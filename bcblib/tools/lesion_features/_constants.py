@@ -3,7 +3,10 @@
 TARGET_SPACE = "MNI152NLin6Asym"
 TARGET_RES = 1
 DEFAULT_BCBTOOLKIT = "/opt/BCBToolkit"
-LF_SUBDIR = "lesion"
+# No per-subject sub-directory: outputs land directly under sub-XXX/ (and
+# sub-XXX/ses-YYY/).  Empty string is joined away by pathlib, so every
+# ``sub_dir / LF_SUBDIR / name`` collapses to ``sub_dir / name``.
+LF_SUBDIR = ""
 
 # Kept outside DEFAULT_BCBTOOLKIT on purpose: the EBRAINS patent office does
 # not allow the TDI script/atlas to ship inside the BCBToolKit distribution.

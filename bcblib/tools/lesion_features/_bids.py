@@ -109,8 +109,8 @@ def build_prep_path(
     Returns
     -------
     Path
-        e.g. ``prep_dir/sub-001/anat/sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz``
-        or ``prep_dir/sub-001/anat/sub-001_space-MNI152NLin6Asym_res-1_desc-core_label-lesion_mask.nii.gz``
+        e.g. ``prep_dir/sub-001/sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz``
+        or ``prep_dir/sub-001/sub-001_space-MNI152NLin6Asym_res-1_desc-core_label-lesion_mask.nii.gz``
     """
     from bcblib.tools.lesion_features._constants import TARGET_SPACE, TARGET_RES
     ses_part = f"_ses-{ses}" if ses else ""
