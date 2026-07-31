@@ -187,9 +187,34 @@ Core dependencies installed automatically:
 - `mne`
 - `templateflow`, `nitransforms` (required for `damage_profile` cross-template resampling)
 
+### Optional extras
+
+A plain `pip install bcblib` runs the standard `lesion_features` / `damage_profile`
+pipeline. For best cross-template warping accuracy, install the `ants` extra:
+
+```bash
+pip install "bcblib[ants]"   # recommended for the lesion-features pipeline
+```
+
+| Install | Adds | Enables |
+|---------|------|---------|
+| `pip install "bcblib[ants]"` | antspy | ANTs `genericLabel` warping of binary masks — better cross-template accuracy (nearest-neighbour fallback otherwise) |
+| `pip install "bcblib[dipy]"` | dipy | Streamline-ratio feature (opt-in — see note) |
+| `pip install "bcblib[ebrains]"` | antspy + dipy | EBRAINS deployment: the `ants` warping plus the opt-in streamline-ratio feature |
+
+> **Streamline ratio is opt-in, not a default.** It counts deterministic streamlines
+> intersecting the lesion; without SIFT2-type correction that is not a quantitatively
+> meaningful measure, and it ships only because the EBRAINS deployment requested it.
+> Most users want `bcblib[ants]`, not `bcblib[ebrains]`.
+
+> Atlas cache and TemplateFlow locations are set through environment variables
+> (`BCBLIB_ATLAS_DIR`, `TEMPLATEFLOW_HOME`, …), independent of the install — see the
+> [pipeline configuration table](docs/lesion_features_pipeline.md#configuration-environment-variables).
+
 External tools (not installed by pip):
 
-- **FSL** — required for `randomise_helper` to call `randomise` itself
+- **FSL** — required for `randomise_helper` to call `randomise` itself, and for the
+  JHU white-matter atlases (`$FSLDIR/data/atlases/JHU/`)
 - **MRIcron** — required for `visualisation` MRIcron wrappers
 - **TensorBoard** — required for `visualisation` TensorBoard integration
 

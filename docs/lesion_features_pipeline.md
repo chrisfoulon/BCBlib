@@ -22,7 +22,35 @@ Stage 2  bcb-lesion-features
 - **BCBToolKit** installed and accessible (provides `run_disco.sh`)
 - **Tractography atlas** (1 mm tracks), typically bundled with BCBToolKit at
   `<BCBToolKit>/Tools/extraFiles/tracks_1mm`
-- **BCBlib** installed: `pip install bcblib`
+- **BCBlib** installed: `pip install "bcblib[ants]"` (recommended — the `ants` extra
+  gives higher-quality binary-mask warping; a plain `pip install bcblib` also works
+  with a nearest-neighbour fallback). The EBRAINS deployment installs `bcblib[ebrains]`
+  instead, which additionally enables the opt-in streamline-ratio feature (see
+  [Configuration](#configuration-environment-variables) and the streamline note below).
+
+---
+
+## Configuration (environment variables)
+
+All runtime configuration is through environment variables, read on each run —
+nothing is baked into the install, so switching install source (git branch ↔ PyPI)
+never changes it. Point these at shared paths for a multi-user server so atlases and
+templates are downloaded once.
+
+| Variable | Purpose | Default if unset |
+|----------|---------|------------------|
+| `BCBLIB_ATLAS_DIR` | Atlas cache (parcellations + Yeh HCP1065 TRK files) | `~/.bcblib/atlases/` |
+| `TEMPLATEFLOW_HOME` | TemplateFlow cache, used for cross-template MNI warps | `~/.cache/templateflow/` |
+| `BCBTOOLKIT_PATH` | BCBToolKit root (provides `run_disco.sh`) | compiled-in default (e.g. `/opt/BCBToolkit`) |
+| `TDI_DIR` | Private TDI script/atlas directory (EBRAINS only) | `/opt/tdi` — TDI silently skipped if absent |
+| `FSLDIR` | FSL install; JHU white-matter atlases read from `$FSLDIR/data/atlases/JHU/` | not set — JHU atlases unavailable |
+
+Example (shared server):
+
+```bash
+export BCBLIB_ATLAS_DIR=/shared/bcblib_atlases
+export TEMPLATEFLOW_HOME=/shared/templateflow
+```
 
 ---
 
