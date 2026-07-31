@@ -1,0 +1,45 @@
+name: Publish to PyPI
+
+# Publish a release to PyPI whenever a version tag (vX.Y.Z) is pushed.
+# The tag is the single trigger: cut a release by pushing `git tag vX.Y.Z && git push origin vX.Y.Z`.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-publish:
+    name: Build sdist + wheel and publish
+    runs-on: ubuntu-latest
+    # Uses PyPI Trusted Publishing (OIDC) — no API token stored in the repo.
+    # Requires a matching trusted publisher configured on PyPI (see below) and,
+    # if you keep the line below, a GitHub environment named "pypi".
+    environment: pypi
+    permissions:
+      id-token: write   # mandatory for Trusted Publishing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Check the tag matches the package version
+        run: |
+          PKG_VER=$(python -c "import re,pathlib;print(re.search(r\"version='([^']+)'\", pathlib.Path('setup.py').read_text()).group(1))")
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          echo "setup.py=$PKG_VER  tag=$TAG_VER"
+          if [ "$PKG_VER" != "$TAG_VER" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match setup.py version $PKG_VER"
+            exit 1
+          fi
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
