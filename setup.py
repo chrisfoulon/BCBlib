@@ -21,9 +21,9 @@ setup(
                       'pymc>=5', 'arviz', 'matplotlib', 'rich>=10',
                       'templateflow', 'nitransforms'],
     extras_require={
-        'ants': ['antspy'],
+        'ants': ['antspyx'],
         'dipy': ['dipy'],
-        'ebrains': ['antspy', 'dipy'],
+        'ebrains': ['antspyx', 'dipy'],
     },
     package_data={
         # If any package contains *.txt or *.rst files, include them:
