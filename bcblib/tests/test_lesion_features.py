@@ -520,6 +520,161 @@ class TestDiscoRunner:
         assert "001" in valid
         assert "002" not in valid
 
+    # -- disco2_ready / require_disco2 --------------------------------------
+    # disconnectome2 isn't installed in CI, so "package missing" is true by
+    # default without mocking; every other case patches find_spec to
+    # simulate "package present" so the index-resolution logic is isolated.
+
+    def test_disco2_ready_none_if_package_missing(self):
+        from bcblib.tools.lesion_features._disco import disco2_ready
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=None,
+        ):
+            assert disco2_ready() is None
+
+    def test_disco2_ready_none_if_index_not_set(self):
+        from bcblib.tools.lesion_features._disco import disco2_ready
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ), patch.dict("os.environ", {}, clear=True):
+            assert disco2_ready() is None
+
+    def test_disco2_ready_none_if_index_dir_missing(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import disco2_ready
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ):
+            assert disco2_ready(index_path_hint=str(tmp_path / "nope")) is None
+
+    def test_disco2_ready_returns_path_when_ready(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import disco2_ready
+        idx = tmp_path / "index"
+        idx.mkdir()
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ):
+            p = disco2_ready(index_path_hint=str(idx))
+        assert p == idx
+
+    def test_disco2_ready_env_override(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import disco2_ready
+        idx = tmp_path / "index"
+        idx.mkdir()
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ), patch.dict("os.environ", {"DISCO2_INDEX_PATH": str(idx)}):
+            p = disco2_ready()
+        assert p == idx
+
+    def test_require_disco2_raises_if_package_missing(self):
+        from bcblib.tools.lesion_features._disco import require_disco2
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=None,
+        ):
+            with pytest.raises(ModuleNotFoundError, match="not installed"):
+                require_disco2()
+
+    def test_require_disco2_raises_if_index_not_set(self):
+        from bcblib.tools.lesion_features._disco import require_disco2
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ), patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(FileNotFoundError, match="index directory not set"):
+                require_disco2()
+
+    def test_require_disco2_raises_if_index_dir_nonexistent(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import require_disco2
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ):
+            with pytest.raises(FileNotFoundError, match="index directory not found"):
+                require_disco2(index_path_hint=str(tmp_path / "nope"))
+
+    def test_require_disco2_returns_path_when_ready(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import require_disco2
+        idx = tmp_path / "index"
+        idx.mkdir()
+        with patch(
+            "bcblib.tools.lesion_features._disco.importlib.util.find_spec",
+            return_value=MagicMock(),
+        ):
+            p = require_disco2(index_path_hint=str(idx))
+        assert p == idx
+
+    # -- run_disco2_batch -----------------------------------------------------
+
+    def test_run_disco2_batch_calls_subprocess(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        disco_dir = tmp_path / "disco"
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+        (lesion_dir / "sub-001_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz").touch()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            outputs = run_disco2_batch(lesion_dir, disco_dir, index_dir)
+
+        args = mock_popen.call_args[0][0]
+        assert args[:2] == ["disco2", "batch"]
+        assert args[2:5] == [str(lesion_dir), str(index_dir), str(disco_dir)]
+        assert "--skip-existing" in args
+        assert "001" in outputs
+
+    def test_run_disco2_batch_skip_existing_false(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir, skip_existing=False)
+
+        args = mock_popen.call_args[0][0]
+        assert "--skip-existing" not in args
+
+    def test_run_disco2_batch_n_jobs(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir, n_jobs=4)
+
+        args = mock_popen.call_args[0][0]
+        assert "--n-jobs" in args
+        assert "4" in args
+
+    def test_run_disco2_batch_raises_on_failure(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 1
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with pytest.raises(RuntimeError, match="disco2 batch failed"):
+                run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir)
+
 
 # ---------------------------------------------------------------------------
 # T3b — Private TDI hook

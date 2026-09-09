@@ -1,5 +1,6 @@
-"""BCBToolKit run_disco.sh wrapper."""
+"""Disconnectome computation: BCBToolKit run_disco.sh and disconnectome2 CLI wrappers."""
 
+import importlib.util
 import os
 import re
 import subprocess
@@ -128,6 +129,125 @@ def run_disco_batch(
     if returncode != 0:
         raise RuntimeError(
             f"run_disco.sh failed with exit code {returncode}."
+        )
+
+    outputs: Dict[str, Path] = {}
+    for f in sorted(lesion_dir.glob("*_label-lesion_mask.nii.gz")):
+        m = re.search(r'sub-([^_]+)', f.name)
+        if m:
+            sub_id = m.group(1)
+            outputs[sub_id] = predict_disco_output(f, disco_dir)
+    return outputs
+
+
+def disco2_ready(index_path_hint: Optional[str] = None) -> Optional[Path]:
+    """Check whether disconnectome2 is installed and its index dir is resolvable.
+
+    Both conditions must hold: the ``disconnectome2`` package must be
+    importable, and an index directory must resolve via
+    *index_path_hint* → ``DISCO2_INDEX_PATH`` env var (no default — there is
+    no sane global default for a per-site fetched atlas).
+
+    Returns
+    -------
+    Path or None
+        The resolved index directory if disco2 is ready to run, else None.
+        Does not warn or raise; callers decide how to react to None.
+    """
+    if importlib.util.find_spec("disconnectome2") is None:
+        return None
+    index_path = index_path_hint or os.environ.get("DISCO2_INDEX_PATH")
+    if index_path is None:
+        return None
+    p = Path(index_path)
+    return p if p.is_dir() else None
+
+
+def require_disco2(index_path_hint: Optional[str] = None) -> Path:
+    """Resolve the disco2 index dir or raise with an actionable message.
+
+    Same resolution logic as :func:`disco2_ready`, but raises instead of
+    returning None. Intended for callers that have explicitly forced the
+    disco2 engine and want a clear, specific failure rather than a silent
+    fallback.
+
+    Raises
+    ------
+    ModuleNotFoundError
+        If the ``disconnectome2`` package is not installed.
+    FileNotFoundError
+        If the package is installed but no usable index directory is found.
+    """
+    if importlib.util.find_spec("disconnectome2") is None:
+        raise ModuleNotFoundError(
+            "disconnectome2 is not installed but --engine disco2 was "
+            "requested. Install disconnectome2 or use --engine auto/bcbtoolkit."
+        )
+    index_path = index_path_hint or os.environ.get("DISCO2_INDEX_PATH")
+    if index_path is None:
+        raise FileNotFoundError(
+            "disconnectome2 index directory not set. Set DISCO2_INDEX_PATH "
+            "or pass --disco2-index to the CLI."
+        )
+    p = Path(index_path)
+    if not p.is_dir():
+        raise FileNotFoundError(f"disconnectome2 index directory not found: {p}")
+    return p
+
+
+def run_disco2_batch(
+    lesion_dir,
+    disco_dir,
+    index_dir: Path,
+    n_jobs: Optional[int] = None,
+    skip_existing: bool = True,
+) -> Dict[str, Path]:
+    """Run `disco2 batch` on a directory of lesion NIfTIs.
+
+    Drop-in disco2-backed sibling of :func:`run_disco_batch`: same
+    flat-directory input layout (``*_label-lesion_mask.nii.gz``) and the
+    same ``_desc-disconnectome`` output naming — :func:`predict_disco_output`
+    applies unchanged (confirmed identical to disco2's own naming logic).
+
+    Parameters
+    ----------
+    lesion_dir : str or Path
+    disco_dir : str or Path
+    index_dir : Path
+        disco2 atlas/tract index directory (see :func:`require_disco2` /
+        :func:`disco2_ready`).
+    n_jobs : int or None
+        Parallel worker count. If None, disco2 picks its own default.
+    skip_existing : bool
+        Pass ``--skip-existing`` to the disco2 CLI (skip subjects whose
+        output already exists).
+
+    Returns
+    -------
+    dict[str, Path]
+        sub_id → expected disconnectome path (not verified to exist yet).
+
+    Raises
+    ------
+    RuntimeError
+        If `disco2 batch` exits non-zero.
+    """
+    lesion_dir = Path(lesion_dir)
+    disco_dir = Path(disco_dir)
+    disco_dir.mkdir(parents=True, exist_ok=True)
+
+    # Note positional order: lesion_dir, index_dir, out_dir.
+    cmd = ["disco2", "batch", str(lesion_dir), str(index_dir), str(disco_dir)]
+    if skip_existing:
+        cmd.append("--skip-existing")
+    if n_jobs is not None:
+        cmd += ["--n-jobs", str(n_jobs)]
+
+    proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+    returncode = proc.wait()
+    if returncode != 0:
+        raise RuntimeError(
+            f"disco2 batch failed with exit code {returncode}."
         )
 
     outputs: Dict[str, Path] = {}

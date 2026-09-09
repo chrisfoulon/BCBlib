@@ -13,7 +13,8 @@ def _build_parser():
         prog="bcb-lf-preprocess",
         description=(
             "Stage 1 of the lesion-features pipeline: normalise lesion masks to "
-            "MNI152NLin6Asym 1 mm and compute disconnectomes with BCBToolKit."
+            "MNI152NLin6Asym 1 mm and compute disconnectomes with BCBToolKit or "
+            "disconnectome2 (see --engine)."
         ),
     )
     p.add_argument(
@@ -29,8 +30,22 @@ def _build_parser():
         help="Output BIDS derivatives directory (default: ./lesion_features_prep)",
     )
     p.add_argument(
+        "--engine", choices=["auto", "bcbtoolkit", "disco2"], default="auto",
+        help=(
+            "Disconnectome engine to use. 'auto' (default) prefers "
+            "disconnectome2 when installed and DISCO2_INDEX_PATH/"
+            "--disco2-index resolves, falling back to BCBToolKit otherwise. "
+            "'bcbtoolkit' or 'disco2' force that engine; 'disco2' errors "
+            "clearly (no fallback) if disco2 is not ready."
+        ),
+    )
+    p.add_argument(
         "--bcbtoolkit", default=None, metavar="PATH",
         help="Path to BCBToolKit directory containing run_disco.sh",
+    )
+    p.add_argument(
+        "--disco2-index", default=None, metavar="PATH",
+        help="Path to the disconnectome2 index directory (or set DISCO2_INDEX_PATH)",
     )
     p.add_argument(
         "--tracks-dir", default=None, metavar="PATH",
@@ -38,11 +53,15 @@ def _build_parser():
     )
     p.add_argument(
         "--ncores", type=int, default=None, metavar="N",
-        help="Number of parallel cores for run_disco.sh",
+        help="Number of parallel cores (run_disco.sh -n flag, or disco2 --n-jobs)",
     )
     p.add_argument(
         "--skip-existing", action="store_true",
-        help="Skip subjects whose output already exists",
+        help=(
+            "Skip subjects whose output already exists. For BCBToolKit this "
+            "only affects lesion normalization; for disco2 it also skips "
+            "existing disconnectome outputs (passed through as --skip-existing)."
+        ),
     )
     p.add_argument(
         "--tmpdir", default=None, metavar="PATH",
@@ -74,6 +93,62 @@ def _build_parser():
         help="Print plan without executing",
     )
     return p
+
+
+def _select_disco_engine(args):
+    """Resolve which disconnectome engine to use and build its run-callable.
+
+    Returns
+    -------
+    tuple[str, Callable[[Path, Path], dict]] or tuple[None, None]
+        ``(engine_name, runner)`` where ``runner(lesion_dir, disco_dir)``
+        triggers the batch run, or ``(None, None)`` if no engine is
+        available and disconnectome computation should be skipped.
+        ``(None, None)`` is only reachable for ``--engine auto/bcbtoolkit``
+        when BCBToolKit itself is missing — ``--engine disco2`` fails hard
+        (``sys.exit``) instead of returning ``(None, None)``.
+    """
+    import functools
+    from bcblib.tools.lesion_features._disco import (
+        find_bcbtoolkit, run_disco_batch, run_disco2_batch,
+        disco2_ready, require_disco2,
+    )
+
+    def _bcbtoolkit_runner():
+        try:
+            kit = find_bcbtoolkit(args.bcbtoolkit)
+        except FileNotFoundError as e:
+            print(f"WARNING: {e}\nSkipping disconnectome computation.", file=sys.stderr)
+            return None
+        return functools.partial(
+            run_disco_batch, bcbtoolkit=kit,
+            ncores=args.ncores, tracks_dir=args.tracks_dir, tmpdir=args.tmpdir,
+        )
+
+    def _disco2_runner(index_dir):
+        return functools.partial(
+            run_disco2_batch, index_dir=index_dir,
+            n_jobs=args.ncores, skip_existing=args.skip_existing,
+        )
+
+    if args.engine == "disco2":
+        try:
+            index_dir = require_disco2(args.disco2_index)
+        except (ModuleNotFoundError, FileNotFoundError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+        return "disco2", _disco2_runner(index_dir)
+
+    if args.engine == "bcbtoolkit":
+        runner = _bcbtoolkit_runner()
+        return ("bcbtoolkit", runner) if runner else (None, None)
+
+    # auto
+    index_dir = disco2_ready(args.disco2_index)
+    if index_dir is not None:
+        return "disco2", _disco2_runner(index_dir)
+    runner = _bcbtoolkit_runner()
+    return ("bcbtoolkit", runner) if runner else (None, None)
 
 
 def main(argv=None):
@@ -112,7 +187,6 @@ def main(argv=None):
         return
 
     from bcblib.tools.lesion_features._pipeline import preprocess_batch
-    from bcblib.tools.lesion_features._disco import find_bcbtoolkit, run_disco_batch
 
     mode = "flat" if args.flat else "BIDS"
     print(f"Preprocessing lesions [{mode} mode] → {output_dir}")
@@ -121,11 +195,10 @@ def main(argv=None):
     )
     print(f"Preprocessed {len(results)} subject(s).")
 
-    try:
-        kit = find_bcbtoolkit(args.bcbtoolkit)
-    except FileNotFoundError as e:
-        print(f"WARNING: {e}\nSkipping disconnectome computation.", file=sys.stderr)
+    engine_name, runner = _select_disco_engine(args)
+    if runner is None:
         return
+    print(f"Using disconnectome engine: {engine_name}")
 
     # Flatten all normalised lesions (always BIDS-named in the prep dir) into a
     # tmp dir for run_disco.sh, then move the outputs back into BIDS structure.
@@ -146,11 +219,7 @@ def main(argv=None):
 
         n = len(list(lesion_dir.glob("*.nii.gz")))
         print(f"Running disconnectome computation for {n} subject(s)...")
-        run_disco_batch(
-            lesion_dir, disco_flat, kit,
-            ncores=args.ncores, tracks_dir=args.tracks_dir,
-            tmpdir=args.tmpdir,
-        )
+        runner(lesion_dir, disco_flat)
 
         moved = 0
         for disco_file in sorted(disco_flat.glob("*disconnectome.nii.gz")):
