@@ -675,6 +675,74 @@ class TestDiscoRunner:
             with pytest.raises(RuntimeError, match="disco2 batch failed"):
                 run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir)
 
+    # -- run_disco2_batch Phase 2 flags (fiber_class/out_voxel_size/len_min/len_max) --
+
+    def test_run_disco2_batch_no_phase2_flags_by_default(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir)
+
+        args = mock_popen.call_args[0][0]
+        for flag in ("--fiber-class", "--out-voxel-size", "--len-min", "--len-max"):
+            assert flag not in args
+
+    def test_run_disco2_batch_fiber_class(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir, fiber_class="association")
+
+        args = mock_popen.call_args[0][0]
+        assert "--fiber-class" in args
+        assert "association" in args
+
+    def test_run_disco2_batch_out_voxel_size(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir, out_voxel_size=2.0)
+
+        args = mock_popen.call_args[0][0]
+        assert "--out-voxel-size" in args
+        assert "2.0" in args
+
+    def test_run_disco2_batch_len_min_len_max(self, tmp_path):
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            run_disco2_batch(lesion_dir, tmp_path / "disco", index_dir, len_min=20.0, len_max=150.0)
+
+        args = mock_popen.call_args[0][0]
+        assert "--len-min" in args
+        assert "20.0" in args
+        assert "--len-max" in args
+        assert "150.0" in args
+
 
 # ---------------------------------------------------------------------------
 # T3b — Private TDI hook

@@ -17,6 +17,10 @@ def _args(**overrides):
         tracks_dir=None,
         tmpdir=None,
         skip_existing=False,
+        fiber_class=None,
+        out_voxel_size=None,
+        len_min=None,
+        len_max=None,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -94,3 +98,68 @@ class TestSelectDiscoEngine:
         ):
             with pytest.raises(SystemExit):
                 _select_disco_engine(_args(engine="disco2"))
+
+    # -- Phase 2: fiber_class/out_voxel_size/len_min/len_max wiring ---------
+
+    def test_disco2_forced_threads_phase2_flags_into_runner(self, tmp_path):
+        with patch(
+            "bcblib.tools.lesion_features._disco.require_disco2",
+            return_value=tmp_path,
+        ):
+            engine, runner = _select_disco_engine(_args(
+                engine="disco2", fiber_class="association",
+                out_voxel_size=2.0, len_min=20.0, len_max=150.0,
+            ))
+        assert engine == "disco2"
+        assert runner.keywords["fiber_class"] == "association"
+        assert runner.keywords["out_voxel_size"] == 2.0
+        assert runner.keywords["len_min"] == 20.0
+        assert runner.keywords["len_max"] == 150.0
+
+    def test_bcbtoolkit_forced_warns_when_phase2_flags_set(self, tmp_path, capsys):
+        fake_kit = tmp_path / "kit"
+        fake_kit.mkdir()
+        with patch(
+            "bcblib.tools.lesion_features._disco.find_bcbtoolkit",
+            return_value=fake_kit,
+        ):
+            engine, runner = _select_disco_engine(
+                _args(engine="bcbtoolkit", fiber_class="association")
+            )
+        assert engine == "bcbtoolkit"
+        assert runner is not None
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert "--fiber-class" in err
+
+    def test_auto_fallback_warns_when_phase2_flags_set(self, tmp_path, capsys):
+        fake_kit = tmp_path / "kit"
+        fake_kit.mkdir()
+        with patch(
+            "bcblib.tools.lesion_features._disco.disco2_ready",
+            return_value=None,
+        ), patch(
+            "bcblib.tools.lesion_features._disco.find_bcbtoolkit",
+            return_value=fake_kit,
+        ):
+            engine, runner = _select_disco_engine(
+                _args(engine="auto", len_min=20.0)
+            )
+        assert engine == "bcbtoolkit"
+        assert runner is not None
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert "--len-min" in err
+
+    def test_auto_prefers_disco2_no_warning_when_phase2_flags_set(self, tmp_path, capsys):
+        with patch(
+            "bcblib.tools.lesion_features._disco.disco2_ready",
+            return_value=tmp_path,
+        ):
+            engine, runner = _select_disco_engine(
+                _args(engine="auto", fiber_class="association")
+            )
+        assert engine == "disco2"
+        assert runner.keywords["fiber_class"] == "association"
+        err = capsys.readouterr().err
+        assert "WARNING" not in err

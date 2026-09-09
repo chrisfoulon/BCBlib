@@ -48,6 +48,26 @@ def _build_parser():
         help="Path to the disconnectome2 index directory (or set DISCO2_INDEX_PATH)",
     )
     p.add_argument(
+        "--fiber-class", default=None, metavar="CLASS",
+        help=(
+            "disco2 only: restrict to a macro fiber class "
+            "(association|commissural|projection|cerebellar|other). "
+            "Ignored under --engine bcbtoolkit."
+        ),
+    )
+    p.add_argument(
+        "--out-voxel-size", type=float, default=None, metavar="MM",
+        help="disco2 only: coarsen output voxel size (mm). Ignored under --engine bcbtoolkit.",
+    )
+    p.add_argument(
+        "--len-min", type=float, default=None, metavar="MM",
+        help="disco2 only: minimum streamline length filter (mm). Ignored under --engine bcbtoolkit.",
+    )
+    p.add_argument(
+        "--len-max", type=float, default=None, metavar="MM",
+        help="disco2 only: maximum streamline length filter (mm). Ignored under --engine bcbtoolkit.",
+    )
+    p.add_argument(
         "--tracks-dir", default=None, metavar="PATH",
         help="Path to tractography atlas directory (-T flag for run_disco.sh)",
     )
@@ -95,6 +115,21 @@ def _build_parser():
     return p
 
 
+_DISCO2_ONLY_FLAGS = ("fiber_class", "out_voxel_size", "len_min", "len_max")
+
+
+def _warn_if_disco2_only_flags_ignored(args):
+    """Warn to stderr if a disco2-only flag is set but BCBToolKit will run instead."""
+    set_flags = [f for f in _DISCO2_ONLY_FLAGS if getattr(args, f) is not None]
+    if set_flags:
+        names = ", ".join(f"--{f.replace('_', '-')}" for f in set_flags)
+        print(
+            f"WARNING: {names} only apply to --engine disco2 and will be "
+            f"ignored under BCBToolKit.",
+            file=sys.stderr,
+        )
+
+
 def _select_disco_engine(args):
     """Resolve which disconnectome engine to use and build its run-callable.
 
@@ -129,6 +164,8 @@ def _select_disco_engine(args):
         return functools.partial(
             run_disco2_batch, index_dir=index_dir,
             n_jobs=args.ncores, skip_existing=args.skip_existing,
+            fiber_class=args.fiber_class, out_voxel_size=args.out_voxel_size,
+            len_min=args.len_min, len_max=args.len_max,
         )
 
     if args.engine == "disco2":
@@ -140,6 +177,7 @@ def _select_disco_engine(args):
         return "disco2", _disco2_runner(index_dir)
 
     if args.engine == "bcbtoolkit":
+        _warn_if_disco2_only_flags_ignored(args)
         runner = _bcbtoolkit_runner()
         return ("bcbtoolkit", runner) if runner else (None, None)
 
@@ -147,6 +185,7 @@ def _select_disco_engine(args):
     index_dir = disco2_ready(args.disco2_index)
     if index_dir is not None:
         return "disco2", _disco2_runner(index_dir)
+    _warn_if_disco2_only_flags_ignored(args)
     runner = _bcbtoolkit_runner()
     return ("bcbtoolkit", runner) if runner else (None, None)
 

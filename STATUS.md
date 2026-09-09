@@ -39,13 +39,21 @@ tested directly (new `test_run_lf_preprocess.py`). BCBToolKit path untouched.
 `test_parcitron.py` collection error). Spec:
 `~/neuro_apps/disconnectome2/docs/BCBLIB_INTEGRATION.md`.
 
-**Phase 2 planned, not yet implemented**: pass-through kwargs on
-`run_disco2_batch` for disco2's `--fiber-class`/`--out-voxel-size`/
-`--len-min`/`--len-max` (all disco2-only, optional, default off). Plan at
-`~/.claude/plans/this-repo-s-bcblib-tools-lesion-features-compiled-metcalfe.md`.
-Out of scope for both phases: `--backend`, `--aggregate`/weighted-graded
-severity input (needs a graded lesion input entering the pipeline upstream —
-separate design decision, not unlocked by this wiring).
+**2026-09-09 — disconnectome2 Phase 2 landed on `dev`.** `run_disco2_batch`
+gained `fiber_class`/`out_voxel_size`/`len_min`/`len_max` (all optional,
+default `None` → no behavior change unless a caller opts in; disco2's own
+CLI validates `fiber_class`, not duplicated here). `run_lf_preprocess.py`
+gained matching `--fiber-class`/`--out-voxel-size`/`--len-min`/`--len-max`
+flags, disco2-only — `_select_disco_engine` now warns (non-fatal) to stderr
+if any are set but the resolved engine is BCBToolKit (forced or auto
+fallback), since BCBToolKit has no equivalent. 8 new tests, 404 total
+passing (same pre-existing, unrelated `test_parcitron.py` collection
+error). `--backend` stays unexposed (perf knob, no caller-facing reason to
+pick it) per spec.
+
+Out of scope for both phases: `--aggregate`/weighted-graded severity input
+(needs a graded lesion input entering the pipeline upstream — separate
+design decision, not unlocked by this wiring).
 
 ## Decided strategy
 
@@ -81,7 +89,5 @@ separate design decision, not unlocked by this wiring).
       (3) `git push origin v0.7.0` to trigger the publish Action. (tag exists locally, unpushed)
 - [ ] Await Paolo's confirmation that PHI update succeeded (TRK download + new CSV output)
 - [ ] Retire `devel` once Paolo's Docker points at `@dev`
-- [ ] Implement disconnectome2 Phase 2 (fiber_class/out_voxel_size/len_min/len_max
-      pass-through) per the plan file referenced above
 - [ ] Decide, separately, where a graded/severity lesion input would enter
       `iter_bids_lesions`/`preprocess_batch` before `--aggregate` is usable

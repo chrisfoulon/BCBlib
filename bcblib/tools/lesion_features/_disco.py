@@ -201,6 +201,10 @@ def run_disco2_batch(
     index_dir: Path,
     n_jobs: Optional[int] = None,
     skip_existing: bool = True,
+    fiber_class: Optional[str] = None,
+    out_voxel_size: Optional[float] = None,
+    len_min: Optional[float] = None,
+    len_max: Optional[float] = None,
 ) -> Dict[str, Path]:
     """Run `disco2 batch` on a directory of lesion NIfTIs.
 
@@ -221,6 +225,15 @@ def run_disco2_batch(
     skip_existing : bool
         Pass ``--skip-existing`` to the disco2 CLI (skip subjects whose
         output already exists).
+    fiber_class : str or None
+        disco2-only: restrict to a macro fiber class (e.g. "association").
+        No BCBToolKit equivalent; disco2's own CLI validates the value.
+    out_voxel_size : float or None
+        disco2-only: coarsen output voxel size (mm). No BCBToolKit
+        equivalent.
+    len_min, len_max : float or None
+        disco2-only: runtime streamline length filter (mm), needs stored
+        lengths in the index. No BCBToolKit equivalent.
 
     Returns
     -------
@@ -242,6 +255,14 @@ def run_disco2_batch(
         cmd.append("--skip-existing")
     if n_jobs is not None:
         cmd += ["--n-jobs", str(n_jobs)]
+    if fiber_class is not None:
+        cmd += ["--fiber-class", fiber_class]
+    if out_voxel_size is not None:
+        cmd += ["--out-voxel-size", str(out_voxel_size)]
+    if len_min is not None:
+        cmd += ["--len-min", str(len_min)]
+    if len_max is not None:
+        cmd += ["--len-max", str(len_max)]
 
     proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
     returncode = proc.wait()
