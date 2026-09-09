@@ -242,6 +242,7 @@ def main(argv=None):
     # Flatten all normalised lesions (always BIDS-named in the prep dir) into a
     # tmp dir for run_disco.sh, then move the outputs back into BIDS structure.
     from bcblib.tools.lesion_features._bids import iter_bids_lesions
+    from bcblib.tools.lesion_features._constants import LF_SUBDIR
     from bcblib.tools.lesion_features._disco import predict_disco_output
     import shutil
 
@@ -250,7 +251,7 @@ def main(argv=None):
     disco_flat = output_dir / "_tmp_disco_flat"
     sub_map = {}  # expected_disco_stem → lesion_dir
     try:
-        for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir, subdir="lesion"):
+        for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir, subdir=LF_SUBDIR):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
             expected = predict_disco_output(lesion_path, disco_flat)
             stem = expected.name.replace(".nii.gz", "")
