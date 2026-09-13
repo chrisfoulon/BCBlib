@@ -144,6 +144,7 @@ def extract_features_one(
     force: bool = False,
     tdi_fn=None,
     streamline_fn=None,
+    atlas_cache: Optional[Dict] = None,
 ) -> Dict[str, Path]:
     """Extract lesion and disconnectome features for one subject.
 
@@ -169,6 +170,9 @@ def extract_features_one(
         *separate* CSV (``…_atlas-yeh_hcp1065_streamline.csv``) because the TRK
         files use abbreviated names (``AF_L``) that differ from the probability
         atlas names (``Arcuate_Fasciculus_L``).
+    atlas_cache : dict, optional
+        Passed through to :func:`damage_profile` to memoise atlas-to-grid
+        resampling across subjects that share a common voxel grid (see there).
 
     Returns
     -------
@@ -219,7 +223,7 @@ def extract_features_one(
             # When only the TSV is missing, pass the full atlas list so that
             # damage_profile still returns _subject_map_stats.
             dp_atlases = atlases_to_run if atlases_to_run else atlases
-            dp_results = damage_profile(map_path, dp_atlases)
+            dp_results = damage_profile(map_path, dp_atlases, atlas_cache=atlas_cache)
 
             for atlas_spec in atlases_to_run:
                 df = dp_results.get(atlas_spec.name)
@@ -299,6 +303,10 @@ def extract_features_batch(
     sub_dirs = sorted(d for d in prep_dir.glob("sub-*") if d.is_dir())
     n_total = len(sub_dirs)
     results: Dict[str, Dict] = {}
+    # Shared across the whole batch: every subject here was normalised onto the
+    # same target grid (TARGET_SPACE), so atlas-to-grid resampling is subject-
+    # invariant and only needs to happen once per atlas, not once per subject.
+    atlas_cache: Dict = {}
 
     for i, sub_dir in enumerate(sub_dirs, 1):
         sub_id = sub_dir.name[4:]
@@ -306,7 +314,8 @@ def extract_features_batch(
         t0 = time.perf_counter()
         before = len(results)
         _process_sub_dirs(
-            sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn, streamline_fn
+            sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn, streamline_fn,
+            atlas_cache=atlas_cache,
         )
         elapsed = time.perf_counter() - t0
         n_written = len(results) - before
@@ -319,14 +328,15 @@ def extract_features_batch(
 
 
 def _process_sub_dirs(
-    sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn=None, streamline_fn=None
+    sub_id, sub_dir, atlases, output_dir, results, force, tdi_fn=None, streamline_fn=None,
+    atlas_cache=None,
 ):
     """Process all session or sessionless lesion directories for one subject."""
     lesion_dir = sub_dir / LF_SUBDIR
     if lesion_dir.is_dir():
         _process_anat(
             sub_id, None, lesion_dir, atlases, output_dir, results, force,
-            tdi_fn, streamline_fn,
+            tdi_fn, streamline_fn, atlas_cache,
         )
     for ses_dir in sorted(sub_dir.glob("ses-*")):
         if not ses_dir.is_dir():
@@ -336,13 +346,13 @@ def _process_sub_dirs(
         if lesion_dir.is_dir():
             _process_anat(
                 sub_id, ses_id, lesion_dir, atlases, output_dir, results, force,
-                tdi_fn, streamline_fn,
+                tdi_fn, streamline_fn, atlas_cache,
             )
 
 
 def _process_anat(
     sub_id, ses_id, anat_dir, atlases, output_dir, results, force,
-    tdi_fn=None, streamline_fn=None,
+    tdi_fn=None, streamline_fn=None, atlas_cache=None,
 ):
     """Locate all lesion + disconnectome pairs and run extract_features_one for each."""
     lesion_files = sorted(anat_dir.glob("*_label-lesion_mask.nii.gz"))
@@ -378,7 +388,7 @@ def _process_anat(
         written = extract_features_one(
             sub_id, ses_id, lesion_path, disco_path, atlases, output_dir,
             lesion_desc=lesion_desc, force=force, tdi_fn=tdi_fn,
-            streamline_fn=streamline_fn,
+            streamline_fn=streamline_fn, atlas_cache=atlas_cache,
         )
         if written:
             results[key] = written

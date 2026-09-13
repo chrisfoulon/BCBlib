@@ -98,6 +98,7 @@ def damage_profile(
     min_overlap_voxels: int = 1,
     on_space_mismatch: str = "error",
     output_dir: Optional[Union[str, os.PathLike]] = None,
+    atlas_cache: Optional[Dict] = None,
 ) -> Dict[str, pd.DataFrame]:
     """Compute overlap statistics between a subject map and one or more atlases.
 
@@ -116,6 +117,15 @@ def damage_profile(
         If provided, one CSV per atlas is written as
         ``<atlas_name>_damage_profile.csv`` and a ``subject_map_stats.csv``
         containing descriptive statistics for the subject map is also written.
+    atlas_cache : dict, optional
+        Memoises the (often expensive, ANTs/TemplateFlow-based) atlas-to-grid
+        resampling across repeated calls that share the same subject voxel
+        grid — e.g. a batch run over many subjects already normalised to a
+        common template.  The resample result depends only on the atlas and
+        the target grid (shape + affine), never on subject data, so it is
+        safe to reuse verbatim.  Pass the *same* dict across calls to enable
+        reuse (a fresh ``{}`` the first time); leave ``None`` (default) to
+        disable caching and match prior behaviour exactly.
 
     Returns
     -------
@@ -139,13 +149,27 @@ def damage_profile(
         subject_stats.to_csv(output_dir / "subject_map_stats.csv", index=False)
 
     for spec in atlases:
-        atlas_ref = _load_atlas_reference(spec)
-        atlas_dict = load_atlas(spec)
-
-        if atlas_ref is not None and atlas_dict:
-            atlas_dict = _resample_atlas_dict(
-                atlas_dict, atlas_ref.affine, subject_img, spec, on_space_mismatch
-            )
+        cache_key = None
+        if atlas_cache is not None:
+            cache_key = (spec.name, subject_img.shape[:3], subject_img.affine.tobytes())
+            cached = atlas_cache.get(cache_key)
+            if cached is not None:
+                atlas_dict = cached
+            else:
+                atlas_ref = _load_atlas_reference(spec)
+                atlas_dict = load_atlas(spec)
+                if atlas_ref is not None and atlas_dict:
+                    atlas_dict = _resample_atlas_dict(
+                        atlas_dict, atlas_ref.affine, subject_img, spec, on_space_mismatch
+                    )
+                atlas_cache[cache_key] = atlas_dict
+        else:
+            atlas_ref = _load_atlas_reference(spec)
+            atlas_dict = load_atlas(spec)
+            if atlas_ref is not None and atlas_dict:
+                atlas_dict = _resample_atlas_dict(
+                    atlas_dict, atlas_ref.affine, subject_img, spec, on_space_mismatch
+                )
 
         if LABEL_DATA_KEY in atlas_dict:
             df = compute_region_stats_from_labels(

@@ -1087,6 +1087,64 @@ class TestPipelines:
             assert sub_key in results
             assert results[sub_key]  # non-empty dict of paths
 
+    def test_extract_features_batch_caches_atlas_resample_across_subjects(self, tmp_path):
+        """Atlas-to-grid resampling is subject-invariant when subjects share a
+        target grid: extract_features_batch must resample each atlas once,
+        not once per subject/variant, and results must be identical either way."""
+        from bcblib.tools.lesion_features._pipeline import extract_features_batch
+        import bcblib.tools.damage_profile._core as core_mod
+
+        # Atlas on a different (but same-family) grid so a real resample runs
+        # (tier 2b), instead of the tier-1 identical-grid passthrough used by
+        # _make_atlas_spec's default 182x218x182 fixture.
+        atlas_arr = np.zeros((91, 109, 91), dtype=np.float32)
+        atlas_arr[45, 54, 45] = 1.0
+        atlas_affine = np.diag([2.0, 2.0, 2.0, 1.0])
+        atlas_path = tmp_path / "coarse_atlas.nii.gz"
+        nib.save(nib.Nifti1Image(atlas_arr, atlas_affine), str(atlas_path))
+        from bcblib.tools.damage_profile import AtlasSpec
+        spec = AtlasSpec(source=str(atlas_path), name="coarse_atlas")
+
+        lesion_data = np.zeros((182, 218, 182), dtype=np.float32)
+        lesion_data[90, 109, 90] = 1.0
+        prep = tmp_path / "prep"
+        for sub in ("001", "002", "003"):
+            lesion_dir = prep / f"sub-{sub}"
+            lesion_dir.mkdir(parents=True)
+            _save_nifti(
+                lesion_dir / f"sub-{sub}_space-MNI152NLin6Asym_res-1_label-lesion_mask.nii.gz",
+                lesion_data,
+            )
+            _save_nifti(
+                lesion_dir / f"sub-{sub}_space-MNI152NLin6Asym_res-1_desc-disconnectome.nii.gz",
+                lesion_data,
+            )
+
+        call_count = {"n": 0}
+        orig_resample = core_mod._resample_atlas_dict
+
+        def spy(*a, **kw):
+            call_count["n"] += 1
+            return orig_resample(*a, **kw)
+
+        with patch.object(core_mod, "_resample_atlas_dict", side_effect=spy):
+            cached_results = extract_features_batch(prep, [spec], tmp_path / "out_cached")
+
+        # 3 subjects x 2 variants (lesion + disconnectome) would be 6 calls
+        # without caching; sharing one grid across the batch must collapse
+        # that to a single real resample.
+        assert call_count["n"] == 1
+
+        uncached_results = extract_features_batch(prep, [spec], tmp_path / "out_uncached")
+
+        import pandas as pd
+        for sub in ("001", "002", "003"):
+            cached_csv = cached_results[sub][f"lesion_{spec.name}_csv"]
+            uncached_csv = uncached_results[sub][f"lesion_{spec.name}_csv"]
+            pd.testing.assert_frame_equal(
+                pd.read_csv(cached_csv), pd.read_csv(uncached_csv)
+            )
+
     def test_extract_features_batch_with_ses(self, tmp_path):
         from bcblib.tools.lesion_features._pipeline import extract_features_batch
         spec = self._make_atlas_spec(tmp_path)
