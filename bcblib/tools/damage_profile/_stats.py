@@ -119,14 +119,28 @@ def compute_region_stats(
     Notes
     -----
     ``pwll_normalised`` (probability-weighted lesion load, normalised) is
-    ``sum_overlap / sum_atlas_in_tract`` — the expected fraction of the tract's
-    total probability mass that is overlapped by the subject map.  For a
-    disconnectome map this quantifies the expected fraction of the tract that
-    is functionally severed.
+    ``weighted_overlap / sum_atlas_in_tract``, where ``weighted_overlap`` is
+    ``Σ(subject_data × atlas_weight)`` over the region — the expected fraction
+    of the tract's total probability mass that is overlapped by the subject
+    map, weighted by both the subject map's own magnitude and the atlas's
+    per-voxel probability.  For a disconnectome map this quantifies the
+    expected fraction of the tract that is functionally severed.  Bounded in
+    ``[0, 1]`` when the subject map itself is bounded in ``[0, 1]`` (a binary
+    lesion mask or an already-probabilistic disconnectome map — the normal
+    inputs to this function); an unnormalised subject map (e.g. raw
+    streamline counts) is out of contract and will not respect that bound.
 
-    ``continuous_dice`` is ``2 × sum_overlap / (n_voxels_overlap + sum_atlas_in_tract)``,
+    ``continuous_dice`` is ``2 × weighted_overlap / (n_voxels_overlap + sum_atlas_in_tract)``,
     a bidirectional size-normalised overlap metric that accounts for both the
-    subject map extent and the atlas probability mass.
+    subject map extent and the atlas probability mass. Also bounded in
+    ``[0, 1]`` under the same subject-map assumption, since
+    ``weighted_overlap ≤ min(n_voxels_overlap, sum_atlas_in_tract)``.
+
+    Both metrics use the *probability-weighted* overlap (``subject_data ×
+    atlas_weight``), not the raw ``sum_overlap`` column — dividing by
+    ``sum_atlas_in_tract`` without that weighting can exceed 1 whenever the
+    atlas has non-uniform, low per-voxel probability spread over many
+    voxels (the normal case for real tractography atlases).
     """
     rows = []
     for region_name, weights in atlas_dict.items():
@@ -145,10 +159,12 @@ def compute_region_stats(
         nonzero_vals = overlap_vals[nonzero_mask]
         sum_ov = float(subject_data[mask].sum())
         sum_atlas = float(weights[mask].sum())
-        pwll_norm = sum_ov / sum_atlas if sum_atlas > 0 else float("nan")
-        subj_nonzero_in_tract = int((subject_data > 0)[mask].sum())
-        denom = subj_nonzero_in_tract + sum_atlas
-        cont_dice = (2.0 * sum_ov / denom) if denom > 0 else float("nan")
+        # Probability-weighted overlap: subject magnitude × atlas probability,
+        # not the raw (unweighted) sum_ov — see Notes above.
+        weighted_overlap = float((subject_data[mask] * weights[mask]).sum())
+        pwll_norm = weighted_overlap / sum_atlas if sum_atlas > 0 else float("nan")
+        denom = n_nonzero + sum_atlas
+        cont_dice = (2.0 * weighted_overlap / denom) if denom > 0 else float("nan")
         subj_nonzero_mask = subject_data > 0
         weights_at_overlap = weights[subj_nonzero_mask & mask]
         max_atlas_prob = float(weights_at_overlap.max()) if weights_at_overlap.size > 0 else 0.0

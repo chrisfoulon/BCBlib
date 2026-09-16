@@ -1112,12 +1112,14 @@ class TestCoverageGaps:
         assert abs(row["sum_atlas_in_tract"] - 2.0) < 1e-5
         # sum_overlap = subject values within tract mask = 1.0 + 1.0 + 0.0 + 0.0 = 2.0
         assert abs(row["sum_overlap"] - 2.0) < 1e-5
-        # pwll_normalised = 2.0 / 2.0 = 1.0
-        assert abs(row["pwll_normalised"] - 1.0) < 1e-5
+        # pwll_normalised: weighted_overlap = 1*0.5 + 1*0.5 = 1.0; / sum_atlas 2.0 = 0.5
+        # (half the tract's equally-weighted voxels are hit -> half its probability
+        # mass is overlapped, matching the "expected fraction overlapped" docstring)
+        assert abs(row["pwll_normalised"] - 0.5) < 1e-5
         # max_atlas_prob_in_overlap = 0.5 (both overlapping voxels have prob 0.5)
         assert abs(row["max_atlas_prob_in_overlap"] - 0.5) < 1e-5
-        # continuous_dice = 2×2.0 / (2 + 2.0) = 4/4 = 1.0
-        assert abs(row["continuous_dice"] - 1.0) < 1e-5
+        # continuous_dice = 2×1.0 / (2 + 2.0) = 2/4 = 0.5
+        assert abs(row["continuous_dice"] - 0.5) < 1e-5
 
     def test_compute_region_stats_pwll_normalised_partial(self):
         from bcblib.tools.damage_profile._stats import compute_region_stats
@@ -1133,6 +1135,59 @@ class TestCoverageGaps:
         df = compute_region_stats(subj, {"tract_B": weights})
         row = df.iloc[0]
         assert abs(row["pwll_normalised"] - 0.5) < 1e-5
+
+    def test_compute_region_stats_pwll_normalised_nonuniform_weights_bounded(self):
+        """Regression test: non-uniform low atlas weights must not push
+        pwll_normalised (or continuous_dice) above 1 — the case the earlier
+        uniform-weight-only tests above didn't exercise, and where the
+        pre-fix (unweighted-numerator) implementation broke."""
+        from bcblib.tools.damage_profile._stats import compute_region_stats
+        # 4 voxels with LOW, non-uniform atlas probability; subject map is
+        # fully "lesioned" (1.0) everywhere the tract touches.
+        weights = np.zeros((4, 4, 4), dtype=np.float32)
+        weights[0, 0, 0] = 0.1
+        weights[0, 0, 1] = 0.2
+        weights[0, 0, 2] = 0.05
+        weights[0, 0, 3] = 0.05
+        subj = np.zeros((4, 4, 4), dtype=np.float32)
+        subj[0, 0, 0] = 1.0
+        subj[0, 0, 1] = 1.0
+        subj[0, 0, 2] = 1.0
+        subj[0, 0, 3] = 1.0
+        df = compute_region_stats(subj, {"tract_C": weights})
+        row = df.iloc[0]
+        # sum_atlas_in_tract = 0.1+0.2+0.05+0.05 = 0.4
+        assert abs(row["sum_atlas_in_tract"] - 0.4) < 1e-5
+        # sum_overlap (raw, unweighted) = 4.0 — the column itself is unaffected by the fix
+        assert abs(row["sum_overlap"] - 4.0) < 1e-5
+        # weighted_overlap = Σ(subj×weight) = 0.4 (subject is 1.0 everywhere,
+        # so weighted_overlap == sum_atlas here) -> pwll_normalised == 1.0,
+        # correctly reflecting "the entire tract mass is overlapped", not 10x it.
+        assert abs(row["pwll_normalised"] - 1.0) < 1e-5
+        assert row["pwll_normalised"] <= 1.0 + 1e-9
+        assert row["continuous_dice"] <= 1.0 + 1e-9
+
+    def test_compute_region_stats_continuous_dice_nonuniform_partial_overlap(self):
+        """Non-uniform weights, partial subject overlap: both probabilistic
+        metrics stay within [0, 1] and reflect the weighted, not raw, overlap."""
+        from bcblib.tools.damage_profile._stats import compute_region_stats
+        weights = np.zeros((4, 4, 4), dtype=np.float32)
+        weights[0, 0, 0] = 0.1
+        weights[0, 0, 1] = 0.2
+        weights[0, 0, 2] = 0.05
+        weights[0, 0, 3] = 0.05
+        subj = np.zeros((4, 4, 4), dtype=np.float32)
+        # Only the two lowest-probability voxels are hit.
+        subj[0, 0, 2] = 1.0
+        subj[0, 0, 3] = 1.0
+        df = compute_region_stats(subj, {"tract_D": weights})
+        row = df.iloc[0]
+        # weighted_overlap = 0.05 + 0.05 = 0.1; sum_atlas = 0.4 -> pwll = 0.25
+        assert abs(row["pwll_normalised"] - 0.25) < 1e-5
+        # continuous_dice = 2×0.1 / (2 + 0.4) = 0.2/2.4
+        assert abs(row["continuous_dice"] - (0.2 / 2.4)) < 1e-5
+        assert 0.0 <= row["pwll_normalised"] <= 1.0
+        assert 0.0 <= row["continuous_dice"] <= 1.0
 
     def test_compute_region_stats_no_overlap_excluded(self):
         from bcblib.tools.damage_profile._stats import compute_region_stats
