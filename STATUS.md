@@ -1,6 +1,6 @@
 # STATUS — BCBlib / lesion_features
 
-_Last touched: 2026-09-09_
+_Last touched: 2026-09-16_
 
 ## Goal
 
@@ -10,8 +10,36 @@ per-subject lesion and disconnectome damage profiles across a standard atlas set
 
 ## State of play
 
+**PyPI is at `0.7.2`** (2026-09-16), a bugfix release — see below. `main` HEAD = `fb8b31e`
+(tag `v0.7.2`). `dev` HEAD = `f4975b8` (merge of `main` into `dev`, carrying the fix forward
+past the disconnectome2 Phase 1+2 work described below, which is still unreleased/private).
+
 **`devel` branch** is the live branch (shared with external team; cannot be retired yet).
-`dev` and `main` were fast-forwarded to match `devel` on 2026-07-31 (both at `758d82b`).
+It is now behind `main`/`dev` — it still contains the pre-fix `pwll_normalised`/
+`continuous_dice` bug (see below) and does not have the disconnectome2 work. Not
+retired yet per the existing decision below (Paolo's Docker still points at it).
+
+**2026-09-16 — fixed `pwll_normalised`/`continuous_dice` bound violation, released as
+`v0.7.2`.** Both metrics in `compute_region_stats()` (`bcblib/tools/damage_profile/_stats.py`)
+used the raw unweighted overlap sum (`sum_ov`) as their numerator instead of the
+probability-weighted sum `Σ(subject_data × atlas_weight)`. This let them exceed their
+documented `[0, 1]` bound whenever the atlas has non-uniform, low per-voxel probability
+spread over many voxels — the normal case for real tractography atlases (e.g. Yeh
+HCP1065). Existing tests only exercised uniform atlas weights, where the buggy and
+correct formulas coincide, which is why it shipped in `0.7.0`/`0.7.1`. Root cause found
+and fix applied to `main` directly (files were byte-identical between `main` and `dev`,
+so the fix didn't need to wait on disconnectome2's release); 2 new regression tests with
+non-uniform weights added, 1 pre-existing test's hardcoded expected values corrected
+(they encoded the buggy behavior). 90/90 `test_damage_profile.py` tests pass on both
+`main` and `dev` post-merge. **Any `pwll_normalised`/`continuous_dice` values already
+computed with `bcblib<=0.7.1` should be treated as unreliable and recomputed** —
+`sum_overlap`, `sum_atlas_in_tract`, and `max_atlas_prob_in_overlap` were unaffected.
+
+Checked the same session whether the Yeh HCP1065 atlas encodes hemisphere via signed
+values (which would break `mask = weights > 0` in the same function) — **ruled out**:
+each `_L`/`_R` tract is already a separate file in the cached atlas
+(`~/.bcblib/atlases/yeh_hcp1065/prob/`), and none of the 64 files contain negative
+values. No action needed.
 
 All planned features for the 0.7.0 release are implemented and pushed to `devel`:
 - TDI private hook (`_tdi.py`) — hooks `/opt/tdi` or `$TDI_DIR`, skips silently if absent
@@ -84,10 +112,10 @@ design decision, not unlocked by this wiring).
 
 ## Open questions / next
 
-- [ ] **Publish 0.7.0**: (1) add PyPI Trusted Publisher for repo `chrisfoulon/BCBlib`,
-      workflow `publish.yml`, environment `pypi`; (2) create GitHub environment `pypi`;
-      (3) `git push origin v0.7.0` to trigger the publish Action. (tag exists locally, unpushed)
 - [ ] Await Paolo's confirmation that PHI update succeeded (TRK download + new CSV output)
-- [ ] Retire `devel` once Paolo's Docker points at `@dev`
+- [ ] Retire `devel` once Paolo's Docker points at `@dev` — note `devel` still carries the
+      `pwll_normalised`/`continuous_dice` bug fixed in `0.7.2`, so flag that to Paolo too
 - [ ] Decide, separately, where a graded/severity lesion input would enter
       `iter_bids_lesions`/`preprocess_batch` before `--aggregate` is usable
+- [ ] disconnectome2 Phase 1+2 (on `dev`) still pending a decision on when/whether to
+      merge into `main` and release — private dependency, no PyPI release needed yet
