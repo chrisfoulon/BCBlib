@@ -277,3 +277,40 @@ class TestMainMoveIntoBidsStructure:
 
         moved = output_dir / "sub-001" / "sub-001_space-MNI_res-1_desc-disconnectome.nii.gz"
         assert moved.exists()
+
+    def test_runner_exception_mid_batch_does_not_delete_computed_output(self, tmp_path):
+        """Regression: disco2 batch itself catches per-lesion errors and keeps
+        writing every other subject's output, only raising (via run_disco2_batch's
+        RuntimeError) after finishing -- so a single failed lesion among many must
+        not cost the rest. Before this fix, moved_cleanly didn't exist and the
+        `finally` block deleted disco_flat unconditionally whenever `unmatched`
+        was empty, which it always was if the exception fired before the
+        move/unmatched loop ran at all."""
+        from bcblib.scripts.run_lf_preprocess import main
+
+        bids_dir = tmp_path / "bids"
+        bids_dir.mkdir()
+        output_dir, lesion = self._make_output_dir(tmp_path)
+
+        def crashing_runner(lesion_dir, disco_flat):
+            disco_flat.mkdir(parents=True, exist_ok=True)
+            # one subject's output was already computed and written...
+            (disco_flat / "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz").touch()
+            # ...before disco2 batch hit a fatal error on some other lesion.
+            raise RuntimeError("disco2 batch failed with exit code 1.")
+
+        with patch(
+            "bcblib.tools.lesion_features._pipeline.preprocess_batch",
+            return_value={"001": lesion},
+        ), patch(
+            "bcblib.scripts.run_lf_preprocess._select_disco_engine",
+            return_value=("disco2", crashing_runner),
+        ):
+            with pytest.raises(RuntimeError):
+                main([
+                    "--bids-dir", str(bids_dir), "--output-dir", str(output_dir),
+                    "--engine", "disco2", "--out-voxel-size", "2",
+                ])
+
+        survivor = output_dir / "_tmp_disco_flat" / "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz"
+        assert survivor.exists()

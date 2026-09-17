@@ -255,6 +255,7 @@ def main(argv=None):
     # flag and never touches res-, so only thread it through for the disco2 engine.
     disco2_out_voxel_size = args.out_voxel_size if engine_name == "disco2" else None
     unmatched = []
+    moved_cleanly = False
     try:
         for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir, subdir=LF_SUBDIR):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
@@ -289,9 +290,16 @@ def main(argv=None):
                 f"being deleted. Unmatched: {unmatched}",
                 file=sys.stderr,
             )
+        moved_cleanly = True
     finally:
         shutil.rmtree(str(lesion_dir), ignore_errors=True)
-        if not unmatched:
+        # Only clean up disco_flat once we know for certain it holds nothing
+        # worth keeping: moved_cleanly=False means runner() (or the move loop
+        # itself) raised before we got to inspect disco_flat's contents, e.g.
+        # disco2 batch computing most subjects fine then exiting non-zero
+        # because one lesion failed -- in that case disco_flat can hold real,
+        # already-computed output that must not be silently discarded.
+        if moved_cleanly and not unmatched:
             shutil.rmtree(str(disco_flat), ignore_errors=True)
 
     print("Done.")
