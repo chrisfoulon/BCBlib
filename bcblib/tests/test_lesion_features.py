@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import nibabel as nib
 import numpy as np
+import pandas as pd
 import pytest
 
 
@@ -1319,6 +1320,161 @@ class TestCLI:
         with pytest.raises(SystemExit) as exc:
             main(["--prep-dir", str(prep)])
         assert exc.value.code != 0
+
+    def test_fix_existing_does_not_require_prep_dir(self, tmp_path):
+        from bcblib.scripts.run_lesion_features import main
+        out = tmp_path / "out"
+        out.mkdir()
+        # Should not raise/exit for a missing --prep-dir when --fix-existing is set.
+        main(["--fix-existing", "--output-dir", str(out)])
+
+    def test_fix_existing_missing_output_dir_exits(self, tmp_path):
+        from bcblib.scripts.run_lesion_features import main
+        with pytest.raises(SystemExit) as exc:
+            main(["--fix-existing", "--output-dir", str(tmp_path / "does_not_exist")])
+        assert exc.value.code != 0
+
+    def test_fix_existing_reports_no_csvs_found(self, tmp_path, capsys):
+        from bcblib.scripts.run_lesion_features import main
+        out = tmp_path / "out"
+        out.mkdir()
+        main(["--fix-existing", "--output-dir", str(out)])
+        captured = capsys.readouterr()
+        assert "No affected CSVs found" in captured.out
+
+    def test_fix_existing_repairs_planted_buggy_csv(self, tmp_path, capsys):
+        from bcblib.scripts.run_lesion_features import main
+        out = tmp_path / "out"
+        out.mkdir()
+        csv_path = out / "sub-001_atlas-yeh_hcp1065.csv"
+        csv_path.write_text(
+            "region_name,n_voxels_region,n_voxels_overlap,fraction_covered,"
+            "mean_overlap,weighted_mean_overlap,sum_overlap,sum_atlas_in_tract,"
+            "pwll_normalised,max_atlas_prob_in_overlap,continuous_dice,"
+            "p90_overlap,p95_overlap\n"
+            "tract_X,10,4,0.4,0.5,1.0,8.0,0.4,20.0,0.9,1.905,1.0,1.0\n"
+        )
+        main(["--fix-existing", "--output-dir", str(out)])
+        captured = capsys.readouterr()
+        assert "fixed 1 row(s)" in captured.out
+        assert "Repaired 1 CSV(s)" in captured.out
+
+        df = pd.read_csv(csv_path)
+        assert df.loc[0, "pwll_normalised"] == pytest.approx(1.0)
+        assert 0.0 <= df.loc[0, "pwll_normalised"] <= 1.0
+
+
+_PROB_CSV_HEADER = (
+    "region_name,n_voxels_region,n_voxels_overlap,fraction_covered,"
+    "mean_overlap,weighted_mean_overlap,sum_overlap,sum_atlas_in_tract,"
+    "pwll_normalised,max_atlas_prob_in_overlap,continuous_dice,"
+    "p90_overlap,p95_overlap\n"
+)
+_PROB_CSV_BUGGY_ROW = "tract_X,10,4,0.4,0.5,1.0,8.0,0.4,20.0,0.9,1.905,1.0,1.0\n"
+_LABEL_CSV_CONTENT = (
+    "region_name,n_voxels_region,n_voxels_overlap,fraction_covered,"
+    "mean_overlap,weighted_mean_overlap,sum_overlap,p90_overlap,p95_overlap\n"
+    "region_1,10,4,0.4,0.5,0.5,2.0,1.0,1.0\n"
+)
+
+
+class TestFixExistingOutputs:
+    """Direct tests of bcblib.tools.lesion_features._repair.fix_existing_outputs,
+    focused on: it fixes what's broken, and it provably leaves everything else
+    (unaffected files, already-correct files) byte-for-byte untouched."""
+
+    def test_fixes_buggy_csv_and_reports_it(self, tmp_path):
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        csv_path = tmp_path / "a.csv"
+        csv_path.write_text(_PROB_CSV_HEADER + _PROB_CSV_BUGGY_ROW)
+
+        changed = fix_existing_outputs(tmp_path)
+
+        assert changed == {csv_path: 1}
+        df = pd.read_csv(csv_path)
+        assert df.loc[0, "pwll_normalised"] == pytest.approx(1.0)
+        assert 0.0 <= df.loc[0, "pwll_normalised"] <= 1.0
+
+    def test_finds_csvs_in_nested_subject_directories(self, tmp_path):
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        nested = tmp_path / "sub-001" / "ses-01"
+        nested.mkdir(parents=True)
+        csv_path = nested / "sub-001_ses-01_atlas-yeh_hcp1065.csv"
+        csv_path.write_text(_PROB_CSV_HEADER + _PROB_CSV_BUGGY_ROW)
+
+        changed = fix_existing_outputs(tmp_path)
+        assert csv_path in changed
+
+    def test_csv_without_required_columns_is_not_rewritten(self, tmp_path):
+        """A label-atlas overlap CSV (no pwll_normalised column at all) must
+        not even be reopened for writing - content and mtime stay identical."""
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        csv_path = tmp_path / "label_atlas.csv"
+        csv_path.write_text(_LABEL_CSV_CONTENT)
+        original_bytes = csv_path.read_bytes()
+        original_mtime_ns = csv_path.stat().st_mtime_ns
+
+        changed = fix_existing_outputs(tmp_path)
+
+        assert csv_path not in changed
+        assert changed == {}
+        assert csv_path.read_bytes() == original_bytes
+        assert csv_path.stat().st_mtime_ns == original_mtime_ns
+
+    def test_already_correct_csv_is_not_rewritten(self, tmp_path):
+        """A CSV already produced by the fixed formula (bcblib>=0.7.2) is left
+        untouched on disk - not just value-equal, but not rewritten at all."""
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        csv_path = tmp_path / "already_fixed.csv"
+        # weighted_mean_overlap=1.0, sum_atlas=0.4 -> pwll=1.0 (matches);
+        # dice = 2*(1.0*0.4)/(4+0.4) = 0.1818...
+        csv_path.write_text(
+            _PROB_CSV_HEADER
+            + "tract_X,10,4,0.4,0.5,1.0,8.0,0.4,1.0,0.9,0.18181818181818182,1.0,1.0\n"
+        )
+        original_bytes = csv_path.read_bytes()
+        original_mtime_ns = csv_path.stat().st_mtime_ns
+
+        changed = fix_existing_outputs(tmp_path)
+
+        assert changed == {}
+        assert csv_path.read_bytes() == original_bytes
+        assert csv_path.stat().st_mtime_ns == original_mtime_ns
+
+    def test_running_twice_is_a_noop_the_second_time(self, tmp_path):
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        csv_path = tmp_path / "a.csv"
+        csv_path.write_text(_PROB_CSV_HEADER + _PROB_CSV_BUGGY_ROW)
+
+        first = fix_existing_outputs(tmp_path)
+        assert first == {csv_path: 1}
+        content_after_first = csv_path.read_bytes()
+
+        second = fix_existing_outputs(tmp_path)
+        assert second == {}
+        assert csv_path.read_bytes() == content_after_first
+
+    def test_non_csv_files_are_ignored(self, tmp_path):
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        tsv_path = tmp_path / "mapstats.tsv"
+        tsv_path.write_text("n_nonzero_voxels\tmap_sum\n5\t3.0\n")
+        original_bytes = tsv_path.read_bytes()
+
+        changed = fix_existing_outputs(tmp_path)
+
+        assert changed == {}
+        assert tsv_path.read_bytes() == original_bytes
+
+    def test_empty_directory_returns_empty_dict(self, tmp_path):
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        assert fix_existing_outputs(tmp_path) == {}
+
+    def test_malformed_csv_is_skipped_without_raising(self, tmp_path):
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        (tmp_path / "empty.csv").write_text("")
+        # Should not raise despite an unparseable/empty CSV in the tree.
+        changed = fix_existing_outputs(tmp_path)
+        assert changed == {}
 
 
 class TestEbrainsAtlasSpecs:

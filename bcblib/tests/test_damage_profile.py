@@ -1278,3 +1278,137 @@ class TestCoverageGaps:
         with patch("bcblib.tools.damage_profile._space.tflow.get", return_value=None):
             with pytest.raises(RuntimeError, match="TemplateFlow has no warp"):
                 _apply_templateflow_warp(atlas, "MNI152NLin2009cAsym", "MNI152NLin6Asym")
+
+    # --- correct_probabilistic_metrics (post-hoc pwll_normalised/continuous_dice repair) ---
+
+    def _buggy_row(self, weighted_mean_overlap, sum_atlas, n_overlap, sum_overlap):
+        """Build a row shaped like bcblib<=0.7.1 output: pwll/dice from the
+        unweighted sum_overlap, as the pre-fix code computed them."""
+        pwll_buggy = sum_overlap / sum_atlas if sum_atlas > 0 else float("nan")
+        denom = n_overlap + sum_atlas
+        dice_buggy = (2.0 * sum_overlap / denom) if denom > 0 else float("nan")
+        return {
+            "region_name": "tract_X",
+            "n_voxels_region": 10,
+            "n_voxels_overlap": n_overlap,
+            "fraction_covered": 0.5,
+            "mean_overlap": 0.5,
+            "weighted_mean_overlap": weighted_mean_overlap,
+            "sum_overlap": sum_overlap,
+            "sum_atlas_in_tract": sum_atlas,
+            "pwll_normalised": pwll_buggy,
+            "max_atlas_prob_in_overlap": 0.9,
+            "continuous_dice": dice_buggy,
+            "p90_overlap": 1.0,
+            "p95_overlap": 1.0,
+        }
+
+    def test_correct_probabilistic_metrics_fixes_buggy_values(self):
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        # non-uniform weights case: buggy pwll_normalised was 20.0 (way above 1)
+        row = self._buggy_row(
+            weighted_mean_overlap=1.0, sum_atlas=0.4, n_overlap=4, sum_overlap=8.0,
+        )
+        assert row["pwll_normalised"] == 20.0  # sanity: really is out-of-bound
+        df = pd.DataFrame([row])
+
+        fixed, n_changed = correct_probabilistic_metrics(df)
+
+        assert n_changed == 1
+        assert fixed.loc[0, "pwll_normalised"] == pytest.approx(1.0)
+        expected_dice = 2.0 * (1.0 * 0.4) / (4 + 0.4)
+        assert fixed.loc[0, "continuous_dice"] == pytest.approx(expected_dice)
+        assert 0.0 <= fixed.loc[0, "pwll_normalised"] <= 1.0
+        assert 0.0 <= fixed.loc[0, "continuous_dice"] <= 1.0
+
+    def test_correct_probabilistic_metrics_leaves_other_columns_untouched(self):
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        row = self._buggy_row(
+            weighted_mean_overlap=0.25, sum_atlas=0.4, n_overlap=2, sum_overlap=2.0,
+        )
+        df = pd.DataFrame([row])
+        fixed, _ = correct_probabilistic_metrics(df)
+        for col in df.columns:
+            if col in ("pwll_normalised", "continuous_dice"):
+                continue
+            assert fixed.loc[0, col] == df.loc[0, col], col
+
+    def test_correct_probabilistic_metrics_is_idempotent(self):
+        """Applying the fix to already-correct (post-0.7.2) output is a no-op:
+        zero rows reported changed, values identical to the input."""
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        row = self._buggy_row(
+            weighted_mean_overlap=0.6, sum_atlas=0.8, n_overlap=5, sum_overlap=3.0,
+        )
+        df = pd.DataFrame([row])
+        once, n1 = correct_probabilistic_metrics(df)
+        assert n1 == 1
+
+        twice, n2 = correct_probabilistic_metrics(once)
+        assert n2 == 0
+        pd.testing.assert_frame_equal(once, twice)
+
+    def test_correct_probabilistic_metrics_noop_on_already_fixed_dataframe(self):
+        """A frame whose pwll_normalised/continuous_dice already match the
+        correct formula (e.g. produced by bcblib>=0.7.2) reports 0 changes."""
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        weighted_mean_overlap, sum_atlas, n_overlap = 0.6, 0.8, 5
+        weighted_overlap = weighted_mean_overlap * sum_atlas
+        correct_dice = 2.0 * weighted_overlap / (n_overlap + sum_atlas)
+        row = {
+            "region_name": "tract_X", "n_voxels_region": 10,
+            "n_voxels_overlap": n_overlap, "fraction_covered": 0.5, "mean_overlap": 0.5,
+            "weighted_mean_overlap": weighted_mean_overlap, "sum_overlap": 3.0,
+            "sum_atlas_in_tract": sum_atlas, "pwll_normalised": weighted_mean_overlap,
+            "max_atlas_prob_in_overlap": 0.9, "continuous_dice": correct_dice,
+            "p90_overlap": 1.0, "p95_overlap": 1.0,
+        }
+        df = pd.DataFrame([row])
+        fixed, n_changed = correct_probabilistic_metrics(df)
+        assert n_changed == 0
+        pd.testing.assert_frame_equal(fixed, df)
+
+    def test_correct_probabilistic_metrics_handles_zero_atlas_weight_nan(self):
+        """sum_atlas_in_tract == 0 produces NaN in both the buggy and the
+        corrected value - must not be misreported as 'changed', and must not
+        raise on the division."""
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        row = {
+            "region_name": "tract_X", "n_voxels_region": 10,
+            "n_voxels_overlap": 0, "fraction_covered": 0.0, "mean_overlap": 0.0,
+            "weighted_mean_overlap": float("nan"), "sum_overlap": 0.0,
+            "sum_atlas_in_tract": 0.0, "pwll_normalised": float("nan"),
+            "max_atlas_prob_in_overlap": 0.0, "continuous_dice": float("nan"),
+            "p90_overlap": 0.0, "p95_overlap": 0.0,
+        }
+        df = pd.DataFrame([row])
+        fixed, n_changed = correct_probabilistic_metrics(df)
+        assert n_changed == 0
+        assert np.isnan(fixed.loc[0, "pwll_normalised"])
+        assert np.isnan(fixed.loc[0, "continuous_dice"])
+
+    def test_correct_probabilistic_metrics_missing_columns_is_noop(self):
+        """A frame without the required columns (e.g. label-atlas overlap
+        output) is returned completely unchanged."""
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        df = pd.DataFrame([{
+            "region_name": "region_1", "n_voxels_region": 10, "n_voxels_overlap": 4,
+            "fraction_covered": 0.4, "mean_overlap": 0.5, "weighted_mean_overlap": 0.5,
+            "sum_overlap": 2.0, "p90_overlap": 1.0, "p95_overlap": 1.0,
+        }])
+        fixed, n_changed = correct_probabilistic_metrics(df)
+        assert n_changed == 0
+        assert fixed is df
+        pd.testing.assert_frame_equal(fixed, df)
+
+    def test_correct_probabilistic_metrics_empty_dataframe(self):
+        from bcblib.tools.damage_profile._stats import correct_probabilistic_metrics
+        df = pd.DataFrame(columns=[
+            "region_name", "n_voxels_region", "n_voxels_overlap", "fraction_covered",
+            "mean_overlap", "weighted_mean_overlap", "sum_overlap", "sum_atlas_in_tract",
+            "pwll_normalised", "max_atlas_prob_in_overlap", "continuous_dice",
+            "p90_overlap", "p95_overlap",
+        ])
+        fixed, n_changed = correct_probabilistic_metrics(df)
+        assert n_changed == 0
+        assert len(fixed) == 0

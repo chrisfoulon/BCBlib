@@ -1,6 +1,6 @@
 """Per-region overlap statistics and subject map descriptive stats."""
 
-from typing import Dict
+from typing import Dict, Tuple
 
 import nibabel as nib
 import numpy as np
@@ -193,6 +193,77 @@ def compute_region_stats(
         .sort_values("mean_overlap", ascending=False)
         .reset_index(drop=True)
     )
+
+
+_PWLL_FIX_REQUIRED_COLUMNS = {
+    "pwll_normalised", "continuous_dice",
+    "weighted_mean_overlap", "sum_atlas_in_tract", "n_voxels_overlap",
+}
+
+
+def correct_probabilistic_metrics(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
+    """Recompute ``pwll_normalised``/``continuous_dice`` from never-buggy columns.
+
+    Repairs output written by bcblib<=0.7.1, whose ``pwll_normalised`` and
+    ``continuous_dice`` used the raw unweighted overlap sum instead of the
+    probability-weighted one (see ``compute_region_stats`` Notes) and could
+    therefore exceed their documented ``[0, 1]`` bound.
+
+    ``weighted_mean_overlap`` (``Σ(subject×weight)/Σ(weight)``) has computed
+    the correct weighted overlap since it was first added — it is exactly
+    the fixed formula for ``pwll_normalised`` — and ``sum_atlas_in_tract``/
+    ``n_voxels_overlap`` were never touched by the bug either. So both
+    corrected metrics are recovered from columns that were always correct,
+    with no need to reload the source images or rerun the pipeline.
+
+    Because the corrected values are pure functions of those untouched
+    columns, this is idempotent: calling it on an already-correct (bcblib>=
+    0.7.2) frame recomputes the same values it already has and reports zero
+    changed rows, so it is always safe to (re-)apply.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        A frame as written by ``compute_region_stats`` (or a CSV loaded from
+        one). Frames lacking any of the required columns (e.g. output from
+        ``compute_region_stats_from_labels``, or the streamline-ratio and
+        mapstats CSVs/TSVs, which never had these columns) are returned
+        unchanged.
+
+    Returns
+    -------
+    tuple[pd.DataFrame, int]
+        A corrected copy (or the input object itself, unmodified, when the
+        required columns are absent), and the number of rows whose
+        ``pwll_normalised`` or ``continuous_dice`` value actually changed.
+    """
+    if not _PWLL_FIX_REQUIRED_COLUMNS.issubset(df.columns):
+        return df, 0
+
+    fixed = df.copy()
+    weighted_mean_overlap = fixed["weighted_mean_overlap"]
+    sum_atlas = fixed["sum_atlas_in_tract"]
+    denom = fixed["n_voxels_overlap"] + sum_atlas
+
+    new_pwll = weighted_mean_overlap
+    weighted_overlap = weighted_mean_overlap * sum_atlas
+    new_dice = (2.0 * weighted_overlap / denom).where(denom > 0)
+
+    pwll_changed = ~np.isclose(
+        fixed["pwll_normalised"].to_numpy(dtype=float),
+        new_pwll.to_numpy(dtype=float),
+        equal_nan=True,
+    )
+    dice_changed = ~np.isclose(
+        fixed["continuous_dice"].to_numpy(dtype=float),
+        new_dice.to_numpy(dtype=float),
+        equal_nan=True,
+    )
+    n_changed = int((pwll_changed | dice_changed).sum())
+
+    fixed["pwll_normalised"] = new_pwll
+    fixed["continuous_dice"] = new_dice
+    return fixed, n_changed
 
 
 def compute_subject_stats(subject_img: nib.Nifti1Image) -> pd.DataFrame:

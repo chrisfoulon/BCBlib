@@ -14,12 +14,23 @@ def _build_parser():
         ),
     )
     p.add_argument(
-        "--prep-dir", required=True, metavar="PATH",
-        help="Output directory from bcb-lf-preprocess",
+        "--prep-dir", default=None, metavar="PATH",
+        help="Output directory from bcb-lf-preprocess (required unless --fix-existing)",
     )
     p.add_argument(
         "--output-dir", default="./lesion_features", metavar="DIR",
         help="Output directory for feature CSVs and TSVs (default: ./lesion_features)",
+    )
+    p.add_argument(
+        "--fix-existing", action="store_true",
+        help=(
+            "Repair pwll_normalised/continuous_dice in CSVs already written "
+            "under --output-dir by bcblib<=0.7.1. Reads and "
+            "rewrites existing CSVs only - does not touch --prep-dir or "
+            "recompute anything from source images. Safe to run more than "
+            "once or on output that is already correct: a no-op in either "
+            "case. Ignores every other flag except --output-dir."
+        ),
     )
     # Custom atlas arguments (repeatable)
     p.add_argument(
@@ -95,8 +106,27 @@ def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    prep_dir = Path(args.prep_dir)
     output_dir = Path(args.output_dir)
+
+    if args.fix_existing:
+        if not output_dir.exists():
+            print(f"ERROR: output-dir does not exist: {output_dir}", file=sys.stderr)
+            sys.exit(1)
+        from bcblib.tools.lesion_features._repair import fix_existing_outputs
+        print(f"Scanning {output_dir} for pwll_normalised/continuous_dice to repair...")
+        changed = fix_existing_outputs(output_dir)
+        if not changed:
+            print("No affected CSVs found - nothing to fix.")
+        else:
+            for path, n_rows in changed.items():
+                print(f"  fixed {n_rows} row(s): {path}")
+            print(f"Repaired {len(changed)} CSV(s).")
+        return
+
+    if args.prep_dir is None:
+        print("ERROR: --prep-dir is required (unless --fix-existing is set).", file=sys.stderr)
+        sys.exit(1)
+    prep_dir = Path(args.prep_dir)
 
     if not prep_dir.exists():
         print(f"ERROR: prep-dir does not exist: {prep_dir}", file=sys.stderr)
