@@ -163,3 +163,117 @@ class TestSelectDiscoEngine:
         assert runner.keywords["fiber_class"] == "association"
         err = capsys.readouterr().err
         assert "WARNING" not in err
+
+
+class TestMainMoveIntoBidsStructure:
+    """Regression (2026-09-17, BBS_M00 2mm regen on deeper2): main()'s
+    move-into-BIDS-structure step predicted disco2's output filename without
+    the out_voxel_size that makes disco2 rewrite the res- entity, matched 0
+    files, and its `finally` then deleted the flat staging dir -- silently
+    discarding all 337 freshly-computed disconnectomes. This exercises main()
+    end to end (preprocess_batch and the engine runner mocked; everything
+    else, including predict_disco_output and the real move/cleanup logic, is
+    the genuine code path)."""
+
+    def _make_output_dir(self, tmp_path, res="1"):
+        output_dir = tmp_path / "prep"
+        sub_dir = output_dir / "sub-001"
+        sub_dir.mkdir(parents=True)
+        lesion = sub_dir / f"sub-001_space-MNI_res-{res}_label-lesion_mask.nii.gz"
+        lesion.touch()
+        return output_dir, lesion
+
+    def test_out_voxel_size_2_moves_disconnectome_into_place(self, tmp_path):
+        from bcblib.scripts.run_lf_preprocess import main
+
+        bids_dir = tmp_path / "bids"
+        bids_dir.mkdir()
+        output_dir, lesion = self._make_output_dir(tmp_path)
+
+        def fake_runner(lesion_dir, disco_flat):
+            disco_flat.mkdir(parents=True, exist_ok=True)
+            # what disco2 actually writes with --out-voxel-size 2: res- rewritten.
+            (disco_flat / "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz").touch()
+            return {}
+
+        with patch(
+            "bcblib.tools.lesion_features._pipeline.preprocess_batch",
+            return_value={"001": lesion},
+        ), patch(
+            "bcblib.scripts.run_lf_preprocess._select_disco_engine",
+            return_value=("disco2", fake_runner),
+        ):
+            main([
+                "--bids-dir", str(bids_dir), "--output-dir", str(output_dir),
+                "--engine", "disco2", "--out-voxel-size", "2",
+            ])
+
+        moved = output_dir / "sub-001" / "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz"
+        assert moved.exists()
+        assert not (output_dir / "_tmp_disco_flat").exists()
+        assert not (output_dir / "_tmp_lesions_for_disco").exists()
+
+    def test_out_voxel_size_2_unmatched_output_is_not_deleted(self, tmp_path, capsys):
+        """If a future change makes predict_disco_output diverge from disco2's
+        real output again, the computed file must survive (left in
+        _tmp_disco_flat) instead of being silently deleted -- the safety net
+        added alongside this fix."""
+        from bcblib.scripts.run_lf_preprocess import main
+
+        bids_dir = tmp_path / "bids"
+        bids_dir.mkdir()
+        output_dir, lesion = self._make_output_dir(tmp_path)
+
+        def fake_runner(lesion_dir, disco_flat):
+            disco_flat.mkdir(parents=True, exist_ok=True)
+            # simulate a naming mismatch: disco2 wrote something predict_disco_output
+            # cannot map back to sub-001 (e.g. a stale res- entity again).
+            (disco_flat / "sub-001_space-MNI_res-9_desc-disconnectome.nii.gz").touch()
+            return {}
+
+        with patch(
+            "bcblib.tools.lesion_features._pipeline.preprocess_batch",
+            return_value={"001": lesion},
+        ), patch(
+            "bcblib.scripts.run_lf_preprocess._select_disco_engine",
+            return_value=("disco2", fake_runner),
+        ):
+            main([
+                "--bids-dir", str(bids_dir), "--output-dir", str(output_dir),
+                "--engine", "disco2", "--out-voxel-size", "2",
+            ])
+
+        survivor = output_dir / "_tmp_disco_flat" / "sub-001_space-MNI_res-9_desc-disconnectome.nii.gz"
+        assert survivor.exists()
+        assert "WARNING" in capsys.readouterr().err
+
+    def test_bcbtoolkit_engine_ignores_out_voxel_size_in_move_step(self, tmp_path):
+        """out_voxel_size only applies to disco2; under bcbtoolkit it must NOT be
+        threaded into predict_disco_output (BCBToolKit never rewrites res-), even
+        if the flag was set on the CLI (it's ignored with a warning for the run
+        itself -- the move step must agree)."""
+        from bcblib.scripts.run_lf_preprocess import main
+
+        bids_dir = tmp_path / "bids"
+        bids_dir.mkdir()
+        output_dir, lesion = self._make_output_dir(tmp_path)
+
+        def fake_runner(lesion_dir, disco_flat):
+            disco_flat.mkdir(parents=True, exist_ok=True)
+            (disco_flat / "sub-001_space-MNI_res-1_desc-disconnectome.nii.gz").touch()
+            return {}
+
+        with patch(
+            "bcblib.tools.lesion_features._pipeline.preprocess_batch",
+            return_value={"001": lesion},
+        ), patch(
+            "bcblib.scripts.run_lf_preprocess._select_disco_engine",
+            return_value=("bcbtoolkit", fake_runner),
+        ):
+            main([
+                "--bids-dir", str(bids_dir), "--output-dir", str(output_dir),
+                "--engine", "bcbtoolkit", "--out-voxel-size", "2",
+            ])
+
+        moved = output_dir / "sub-001" / "sub-001_space-MNI_res-1_desc-disconnectome.nii.gz"
+        assert moved.exists()

@@ -40,12 +40,43 @@ def find_bcbtoolkit(path_hint: Optional[str] = None) -> Path:
     )
 
 
-def predict_disco_output(input_path, disco_dir) -> Path:
+def _rewrite_res_entity(stem: str, out_voxel_size: Optional[float]) -> str:
+    """Make the BIDS ``res-`` entity (if the naming convention uses one) reflect the
+    ACTUAL output resolution, mirroring disconnectome2's own CLI naming fix (found
+    2026-09-16, see disconnectome2's docs/OUTPUT_GRID_ALIGNMENT.md).
+
+    Needed here too: this module predicts disco2's output filename to move it out of
+    the flat staging dir used by run_lf_preprocess.py, and must predict the SAME name
+    disco2 itself writes -- or the move step silently matches nothing. That is exactly
+    what happened on deeper2's `--out-voxel-size 2` BBS_M00 rerun (2026-09-17): disco2
+    computed all 337 disconnectomes correctly (named ``res-2``), the move step predicted
+    a stale ``res-1`` name for every one of them, matched 0, and the `finally` cleanup
+    then deleted the flat staging dir on the way out -- silently discarding all 337
+    freshly-computed outputs.
+    """
+    if out_voxel_size is None:
+        return stem
+    res_val = f"{out_voxel_size:g}"
+    if re.search(r'_res-[^_]+', stem):
+        return re.sub(r'_res-[^_]+', f'_res-{res_val}', stem)
+    m = re.search(r'_desc-', stem)
+    if m:
+        return stem[:m.start()] + f'_res-{res_val}' + stem[m.start():]
+    return stem
+
+
+def predict_disco_output(input_path, disco_dir, out_voxel_size: Optional[float] = None) -> Path:
     """Return the expected disconnectome output path for a given lesion input.
 
     For plain lesions: ``_label-lesion_mask`` → ``_desc-disconnectome``.
     For desc-labelled lesions (e.g. glioma): ``_desc-core_label-lesion_mask``
     → ``_desc-core-disconnectome`` (merged into one desc entity).
+
+    ``out_voxel_size``, when given, must match what disco2 was actually invoked
+    with: it also rewrites/inserts the ``res-`` entity to reflect the coarsened
+    output resolution, the same way disco2's own CLI does (since 2026-09-16).
+    BCBToolKit has no such flag -- always pass ``None`` (the default) for that
+    engine, since it never touches the ``res-`` entity.
     """
     stem = Path(input_path).name
     if stem.endswith(".nii.gz"):
@@ -61,6 +92,7 @@ def predict_disco_output(input_path, disco_dir) -> Path:
         )
     else:
         stem = stem.replace("_label-lesion_mask", "_desc-disconnectome")
+    stem = _rewrite_res_entity(stem, out_voxel_size)
     return Path(disco_dir) / (stem + ".nii.gz")
 
 
@@ -211,7 +243,8 @@ def run_disco2_batch(
     Drop-in disco2-backed sibling of :func:`run_disco_batch`: same
     flat-directory input layout (``*_label-lesion_mask.nii.gz``) and the
     same ``_desc-disconnectome`` output naming — :func:`predict_disco_output`
-    applies unchanged (confirmed identical to disco2's own naming logic).
+    is called with the same ``out_voxel_size`` so its prediction matches
+    disco2's actual output name (including the ``res-`` entity rewrite).
 
     Parameters
     ----------
@@ -276,7 +309,7 @@ def run_disco2_batch(
         m = re.search(r'sub-([^_]+)', f.name)
         if m:
             sub_id = m.group(1)
-            outputs[sub_id] = predict_disco_output(f, disco_dir)
+            outputs[sub_id] = predict_disco_output(f, disco_dir, out_voxel_size=out_voxel_size)
     return outputs
 
 

@@ -264,6 +264,40 @@ class TestBidsUtils:
         )
         assert p.name == "sub-001_space-MNI_res-1_desc-core-disconnectome.nii.gz"
 
+    def test_predict_disco_output_out_voxel_size_rewrites_res_entity(self):
+        """Regression (2026-09-17, BBS_M00 2mm regen on deeper2): disco2 itself
+        rewrites the res- entity to the ACTUAL output resolution when
+        --out-voxel-size coarsens the output (disconnectome2 fix, 2026-09-16,
+        see its docs/OUTPUT_GRID_ALIGNMENT.md). predict_disco_output must predict
+        the SAME name disco2 actually writes, or run_lf_preprocess's
+        move-into-BIDS-structure step matches 0 files -- and its `finally` used
+        to then delete the flat staging dir on the way out, silently discarding
+        every freshly-computed disconnectome (which is exactly what happened).
+        """
+        from bcblib.tools.lesion_features._disco import predict_disco_output
+        p = predict_disco_output(
+            "sub-001_space-MNI_res-1_label-lesion_mask.nii.gz", "/out",
+            out_voxel_size=2.0,
+        )
+        assert p.name == "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz"
+
+    def test_predict_disco_output_out_voxel_size_none_unchanged(self):
+        """out_voxel_size=None (the default, and always the case for BCBToolKit,
+        which has no such flag) keeps the old verbatim-carry-over behaviour."""
+        from bcblib.tools.lesion_features._disco import predict_disco_output
+        p = predict_disco_output(
+            "sub-001_space-MNI_res-1_label-lesion_mask.nii.gz", "/out",
+        )
+        assert p.name == "sub-001_space-MNI_res-1_desc-disconnectome.nii.gz"
+
+    def test_predict_disco_output_out_voxel_size_inserts_res_when_absent(self):
+        from bcblib.tools.lesion_features._disco import predict_disco_output
+        p = predict_disco_output(
+            "sub-001_space-MNI_label-lesion_mask.nii.gz", "/out",
+            out_voxel_size=2.0,
+        )
+        assert p.name == "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz"
+
 
 # ---------------------------------------------------------------------------
 # T2 — Space normalisation
@@ -725,6 +759,27 @@ class TestDiscoRunner:
         args = mock_popen.call_args[0][0]
         assert "--out-voxel-size" in args
         assert "2.0" in args
+
+    def test_run_disco2_batch_out_voxel_size_returns_rewritten_names(self, tmp_path):
+        """The dict run_disco2_batch itself returns must also predict the res-2
+        name disco2 actually writes, not a stale res-1 (same root cause as
+        predict_disco_output's own regression test above)."""
+        from bcblib.tools.lesion_features._disco import run_disco2_batch
+        lesion_dir = tmp_path / "lesions"
+        lesion_dir.mkdir()
+        (lesion_dir / "sub-001_space-MNI_res-1_label-lesion_mask.nii.gz").touch()
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        with patch("subprocess.Popen", return_value=mock_proc):
+            outputs = run_disco2_batch(
+                lesion_dir, tmp_path / "disco", index_dir, out_voxel_size=2.0,
+            )
+
+        assert outputs["001"].name == \
+            "sub-001_space-MNI_res-2_desc-disconnectome.nii.gz"
 
     def test_run_disco2_batch_len_min_len_max(self, tmp_path):
         from bcblib.tools.lesion_features._disco import run_disco2_batch

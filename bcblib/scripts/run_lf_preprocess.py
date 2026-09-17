@@ -250,10 +250,17 @@ def main(argv=None):
     lesion_dir.mkdir(parents=True, exist_ok=True)
     disco_flat = output_dir / "_tmp_disco_flat"
     sub_map = {}  # expected_disco_stem → lesion_dir
+    # disco2 rewrites the res- entity to the actual output resolution when
+    # --out-voxel-size coarsens the output (2026-09-16 fix); BCBToolKit has no such
+    # flag and never touches res-, so only thread it through for the disco2 engine.
+    disco2_out_voxel_size = args.out_voxel_size if engine_name == "disco2" else None
+    unmatched = []
     try:
         for sub_id, ses_id, lesion_path in iter_bids_lesions(output_dir, subdir=LF_SUBDIR):
             shutil.copy2(str(lesion_path), str(lesion_dir / lesion_path.name))
-            expected = predict_disco_output(lesion_path, disco_flat)
+            expected = predict_disco_output(
+                lesion_path, disco_flat, out_voxel_size=disco2_out_voxel_size,
+            )
             stem = expected.name.replace(".nii.gz", "")
             sub_map[stem] = lesion_path.parent
 
@@ -268,10 +275,24 @@ def main(argv=None):
                 dest = sub_map[stem] / disco_file.name
                 shutil.move(str(disco_file), str(dest))
                 moved += 1
+            else:
+                unmatched.append(disco_file.name)
         print(f"Moved {moved} disconnectome(s) into BIDS structure.")
+        if unmatched:
+            # Found 2026-09-17: a predict_disco_output/actual-name mismatch used to
+            # mean moved==0 here and the `finally` below silently deleted every
+            # freshly-computed disconnectome. Never delete work we couldn't place --
+            # leave disco_flat behind so nothing computed is lost.
+            print(
+                f"WARNING: {len(unmatched)} computed disconnectome(s) did not match "
+                f"any expected filename and were left in {disco_flat} instead of "
+                f"being deleted. Unmatched: {unmatched}",
+                file=sys.stderr,
+            )
     finally:
         shutil.rmtree(str(lesion_dir), ignore_errors=True)
-        shutil.rmtree(str(disco_flat), ignore_errors=True)
+        if not unmatched:
+            shutil.rmtree(str(disco_flat), ignore_errors=True)
 
     print("Done.")
 
